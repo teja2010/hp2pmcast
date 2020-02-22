@@ -1,0 +1,64 @@
+// hp2p mcast
+
+syntax = "proto3";
+package main;
+
+message JoinReq {
+	int32 hierarchy = 1;	//the tier which it wants to join
+	int64 time = 2;		//Unix Time @ UTC
+}
+
+message JoinResp {
+	int32 hierarchy = 1;
+	int32 rtt_ms = 2;		//RTT in milliseconds
+	int64 time = 3;		//Unix Time @ UTC
+	repeated FingerEntry FEList = 4; //multiple entries @ hierarchy level
+}
+
+message NodeId {
+	int64 A = 1;
+	int64 B = 2;
+	int64 C = 3;
+}
+
+message FingerEntry {
+	NodeId id = 1;
+	fixed64 address = 2;	// for now just the IPv4 address
+	string hostname = 3;	// better, since indep of IPv4 address ?
+}
+
+message EvalInfo {
+	int32 hops = 1;		// number of hops to reach self
+	int64 time = 2;		// time when it reached self
+}
+
+message FwdPacket {
+	NodeId limit = 1;		// only fwd btween self and limit
+	repeated EvalInfo evalList = 2;	// append self info before forwarding
+	bytes  payload = 3;		// payload e.g. video/audio frames
+}
+
+message GetFERequest {
+	int32 hierarchy = 1;
+	int64 hier_id = 2;
+}
+
+message GetFEResponse {
+	int32 hierarchy = 1;
+	FingerEntry newFE = 2;
+}
+
+message Successor {
+	NodeId id = 1;
+}
+
+message Empty {
+}
+
+service mcaster {
+	rpc Join(JoinReq) returns (JoinResp) {}
+	rpc Fwd(FwdPacket) returns (Empty) {}
+	rpc GetFingerEntry(GetFERequest) returns (GetFEResponse) {}
+	rpc SetSuccessor(Successor) returns (Empty) {}
+}
+
