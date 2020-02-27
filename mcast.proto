@@ -10,41 +10,45 @@ message JoinReq {
 
 message JoinResp {
 	int32 hierarchy = 1;
-	int32 rtt_ms = 2;		//RTT in milliseconds
+	int64 rtt_ms = 2;		//RTT in milliseconds
 	int64 time = 3;		//Unix Time @ UTC
-	repeated FingerEntry FEList = 4; //multiple entries @ hierarchy level
+	FingerEntry self = 4;
+	repeated FingerEntry FEList = 5; //multiple entries @ hierarchy level
 }
 
 message NodeId {
-	int64 A = 1;
-	int64 B = 2;
-	int64 C = 3;
+	uint64 A = 1;
+	uint64 B = 2;
+	uint64 C = 3;
 }
 
 message FingerEntry {
 	NodeId id = 1;
-	fixed64 address = 2;	// for now just the IPv4 address
+	//fixed64 address = 2;	// for now just the IPv4 address //TODO remove
 	string hostname = 3;	// better, since indep of IPv4 address ?
 }
 
 message EvalInfo {
 	int32 hops = 1;		// number of hops to reach self
 	int64 time = 2;		// time when it reached self
+	NodeId node = 3;	// self's node id
 }
 
 message FwdPacket {
 	NodeId limit = 1;		// only fwd btween self and limit
 	repeated EvalInfo evalList = 2;	// append self info before forwarding
 	bytes  payload = 3;		// payload e.g. video/audio frames
+	NodeId src = 4;
 }
 
 message GetFERequest {
 	int32 hierarchy = 1;
-	int64 hier_id = 2;
+	NodeId limit = 2;
 }
 
 message GetFEResponse {
 	int32 hierarchy = 1;
+	NodeId limit = 3;
 	FingerEntry newFE = 2;
 }
 
