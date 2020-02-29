@@ -458,44 +458,75 @@ func (s *mcaster) searchtable(key string) (string,error){
 	return succ.hostname,err
 }
 
-func (s *mcaster) fillFingerTable(i int) (int, error) {
-	i = (i + 1) % s.config.ringSize // half ring
-	fingerStart := s.fingerStart(i)
-	finger, err := s.findSuccessorForFingers(fingerStart)
-
-	chord.fingerTable[i] = finger
-
+func (s *mcaster) fillFT(i int, h int) (int, error) {
+	i = (i + 1) % FTsize // half ring
+	fingerStart := s.fingerStart(i, FTsize, h)
+	finger, err := s.findSuccessorForFingers(fingerStart,h)
+	switch h{
+	case 1:
+	s.TopFT[i] = finger
+	case 2:
+	s.TopFT[i] = finger
+	case 3:
+	s.TopFT[i] = finger
+	}
 	return i, nil
 }
 
-func (s *mcaster) fingerStart(i int) []byte {
-	currID := new(big.Int).SetBytes(chord.Id)
-	offset := new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(i)), nil)
-	maxVal := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(chord.config.ringSize)), nil)
-	start := new(big.Int).Add(currID, offset)
-	start.Mod(start, maxVal)
-	if len(start.Bytes()) == 0 {
-		return []byte{0}
+func (s *mcaster) fingerStart(i int, max int, h int) int {
+	switch h {
+	case 1:
+	currID := s.self.A
+	case 2:
+	currID := s.self.B
+	case 3:
+	currID := s.self.C
 	}
-	return start.Bytes()
+	offset := Exp2(i)
+	maxVal := Exp2(max)
+	start := currID + offset
+	start = start % maxVal
+	
+	return start
 }
 
-func (s *mcaster) findSuccessorForFingers(id []byte) (*chordnode, error) {
-	//pred, err := chord.findPredecessorForFingers(id)
-
-	//succ, err := chord.getSuccessorRPC(pred)
-	succ, err := chord.getSuccessorRPC(s.chordnode)
+func (s *mcaster) findSuccessorForFingers(id int, h int) (*NodeId, error) {
+	pred, err := s.findPredecessorForFingers(id,h)
+	//succ, err := s.getSuccessorByRPC(pred,h)
 	return succ, err
 }
 
-func (s *mcaster) getSuccessorRPC(remote *chordnode) (*chordnode, error) {
-	client, err := s.connectRemote(remote.hostname)
-	if err != nil {
-		return nil, err
-	}
+func (s *mcaster) findPredecessorForFingers(id int, h int) (*NodeId, error) {
+	closest = findClosestPrecedingNode(id,h)
+	//if closest.Id = s.Id
+	//closestSucc, err := chord.getSuccessorByRPC(closest,h)
+	return closestSucc, err
 
-	result, err := client.GetSuccessor(context.Background(), &chordrpc.NN{}) //NN: empty message
-	return result, err
+}
+
+func (s *mcaster) findClosestPrecedingNode(id int, h int) *NodeId {
+	for i := FTSize - 1; i >= 0; i-- {
+		switch h {
+		case 1:
+		if s.topFT[i] != nil {
+			if between(s.topFT[i].Id, chord.Id, id) {
+				return s.topFT[i]
+			}
+		}
+		case 2:
+		if s.midFT[i] != nil {
+			if between(s.midFT[i].Id, chord.Id, id) {
+				return s.midFT[i]
+			}
+		}
+		case 1:
+		if s.lowFT[i] != nil {
+			if between(s.lowFT[i].Id, chord.Id, id) {
+				return s.lowFT[i]
+			}
+		}
+	}
+	return s.NodeId
 }
 
 func DoFwdPkt(fe FingerEntry, pkt FwdPacket, hierarchy int) {
