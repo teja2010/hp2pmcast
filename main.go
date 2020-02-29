@@ -57,6 +57,22 @@ func GetHostName(hostname string) string {
 	return hostname
 }
 
+const (
+	MSG_TYPE_RUN_GETFE       = 1 << iota
+	MSG_TYPE_ADD_NODEID      = 1 << iota
+	MSG_TYPE_JOIN_COMPLETE   = 1 << iota
+)
+
+// once a node hostname and Id are found (only in top and mid lvl)
+// 1. send a GetFingerEntry to get an alternate host in that cluster.
+//    The receiver will trigger a GetFingerEntry if the cluster is unknown
+//    and could be added to the finger table.
+// 2. on recving a response update, add to finger table.
+// use MSG_TYPE_RUN_GETFE and MSG_TYPE_ADD_NODEID to do this
+
+// in low lvl, once a node hostname is found,
+// 1. send a set succesor/set predecessor. similar to chord
+
 type ctrlMsg struct {
 	msgType int
 	// =1 : run do_getFE(), node at hierarchy, index i is invalid
@@ -180,7 +196,7 @@ func (s *mcaster) GetFingerEntry(ctx context.Context, in *GetFERequest) (*GetFER
 }
 
 func (s *mcaster) SetSuccessor(ctx context.Context, in *Successor) (*Empty, error) {
-	DLog("SetSuccessor Id %v", in.Id)
+	DLog("SetSuccessor Id %v", in.FE.Id)
 	out := new(Empty)
 
 	return out, nil
@@ -314,7 +330,9 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 	select {
 	case jr := <-joinChan:
 		//send the join req, add it maybe?
-		ctrlChan <- ctrlMsg{msgType:1, hierarchy:hierarchy, i:-1, fe:*jr.Self}
+		ctrlChan <- ctrlMsg{msgType:MSG_TYPE_RUN_GETFE,
+				    hierarchy:hierarchy,
+				    i:-1, fe:*jr.Self}
 		openReqsR2H = ListFindAndPop(openReqsR2H, jr.Self.Hostname)
 
 		//check threshold start lower join cluster request if possible
@@ -349,8 +367,9 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 	select {
 	case jr := <-joinChan:
 		//send the join req, add it maybe?
-		ctrlChan<-ctrlMsg{msgType:1, hierarchy:hierarchy, i:-1,
-				  fe:*jr.Self}
+		ctrlChan<-ctrlMsg{msgType:MSG_TYPE_RUN_GETFE,
+				  hierarchy:hierarchy,
+				  i:-1, fe:*jr.Self}
 		openReqsH2R = ListFindAndPop(openReqsH2R, jr.Self.Hostname)
 
 		//check threshold start lower join cluster request if possible
@@ -382,7 +401,7 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 
 	DLog("JoinCluster() complete")
 	//signal completion of join
-	ctrlChan<-ctrlMsg{msgType:3, hierarchy:hierarchy}
+	ctrlChan<-ctrlMsg{msgType:MSG_TYPE_JOIN_COMPLETE, hierarchy:hierarchy}
 }
 
 func FillFingerTable(m *mcaster) {
@@ -406,12 +425,26 @@ func FillFingerTable(m *mcaster) {
 	}
 
 	// code to fill up the finger table
-	//joined := 0 // number of clusters joined
+	joined := 0 // number of clusters joined
 	for {
 	select {
 	case cmsg := <-ctrlChan:
 		DLog("cmsg %v", cmsg)
 		// receive messages from JoinCluster, add to Finger Tables
+		switch cmsg.msgType {
+		case MSG_TYPE_RUN_GETFE:
+
+		case MSG_TYPE_JOIN_COMPLETE :
+			joined = joined + 1
+			if joined == 3 {
+				MLog("Joined all three clusters")
+				break;
+			}
+
+
+		}
+
+
 	}
 	}
 }
@@ -644,12 +677,12 @@ func main() {
 	// to handle failures
 	//case cmsg := <-ctrlChan:
 		// TODO: handle failures
-		//if cmsg.msgType == 1 {
+		//if cmsg.msgType == MSG_TYPE_RUN_GETFE {
 		//	if cmsg.hierarchy == 1 {
 		//		go DoGetFE(m.topFT[i], )
 		//	}
 		//	go DoGetFE(cmsg.hierarchy, cmsg.i)
-		//} else if cmsg.msgType == 2 {
+		//} else if cmsg.msgType == MSG_TYPE_ADD_NODEID {
 		//	if cmsg.hierarchy == 1 {
 		//		m.topFT[i] = fe
 		//	}
