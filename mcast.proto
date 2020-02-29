@@ -53,7 +53,8 @@ message GetFEResponse {
 }
 
 message Successor {
-	NodeId id = 1;
+	FingerEntry FE = 1;	// entry that the receiver might want to add
+	NodeId limit = 2;	// limit till which the receiver should fwd
 }
 
 message Empty {
