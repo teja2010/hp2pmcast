@@ -8,6 +8,8 @@ import (
 	"net"
 	"time"
 	"context"
+	"runtime"
+	"strconv"
 	"crypto/sha1"
 	"encoding/json"
 
@@ -15,8 +17,7 @@ import (
 )
 
 const (
-	port = ":60001"
-
+	NANO_TO_MILLISEC = 1000000   // 10^6
 	topFTsize = 64
 	midFTsize = 64
 	botFTsize = 64
@@ -32,22 +33,43 @@ var (
 type Configuration struct {
 	Hostname string
 	MulticastFlag int
-	Port string
 	XBytes int
 	YSeconds int
 	//Add new items here. read from config.json
 	Threshold []int64
 	UcsdNode string
+	Dlog int
+	LogColor int
+}
+func (c Configuration) String() string {
+	return fmt.Sprintf("{Hostname %v, MulticastFlag %v, " +
+			   "XBytes %v, YSeconds %v, Threshold %v, UcsdNode %v}",
+			   c.Hostname, c.MulticastFlag,
+			   c.XBytes, c.YSeconds,
+			   c.Threshold, c.UcsdNode)
+}
+func GetHostName(hostname string) string {
+	for i:=len(hostname)-1 ; i> 0 ;i-- {
+		if hostname[i] == ':' {
+			return hostname[i:]
+		}
+	}
+	return hostname
 }
 
 type ctrlMsg struct {
 	msgType int
-	// =1 : run do_getFE(), node at hierarchy h, index i is invalid
-	// =2 : update nodeId at h, i with fe
-	// =3 : JoinCluster at hierarchy h is complete
-	h int
+	// =1 : run do_getFE(), node at hierarchy, index i is invalid
+	// =2 : update nodeId at hierarchy, i with fe
+	// =3 : JoinCluster at hierarchy is complete
+	hierarchy int
 	i int
 	fe FingerEntry
+}
+func (c ctrlMsg) String() string {
+	return fmt.Sprintf("{ msgType %v, hierarchy %v, index %v, " +
+			   "FingerEntry %v}",
+			   c.msgType, c.hierarchy, c.i, c.fe)
 }
 
 type mcaster struct {
@@ -68,10 +90,52 @@ type joinListStruct struct {
 	resp JoinResp
 }
 
+func LogFormat() string {
+	_, file, line, ok := runtime.Caller(2)
+	if !ok {
+		file = "???"
+		line = 0
+	}
+	for i := len(file) - 1; i > 0; i-- {
+		if file[i] == '/' {
+			file = file[i+1:]
+			break
+		}
+	}
+	return (file + ":" + strconv.Itoa(line) + " ")
+}
+
+func DLog(format string, v ...interface{}) {
+	if m.config.Dlog == 0 {
+		return
+	}
+
+	file := LogFormat()
+	if m.config.LogColor == 1{
+		log.Printf("\x1b[36m DEBUG | " + file + format + "\033[0m", v ...)
+	} else {
+		log.Printf(" DEBUG | " +file+ format , v ...)
+	}
+}
+
+func MLog(format string, v ...interface{}) {
+	file := LogFormat()
+	log.Printf(" MID   | " + file + format , v ...)
+}
+
+func HLog(format string, v ...interface{}) {
+	file := LogFormat()
+	if m.config.LogColor == 1{
+		log.Printf("\x1B[31m HIGH  | " + file+ format + "\033[0m", v ...)
+	} else {
+		log.Printf(" HIGH  | " +file+ format , v ...)
+	}
+}
+
 func McastHash(s string) uint64 {
-	h := sha1.New()
-	io.WriteString(h, s)
-	b := h.Sum(nil)
+	sha := sha1.New()
+	io.WriteString(sha, s)
+	b := sha.Sum(nil)
 	var x uint64
 	x = ((uint64(b[0]) << 56) | (uint64(b[1]) << 48) |
 	     (uint64(b[2]) << 40) | (uint64(b[3]) << 32) |
@@ -81,22 +145,34 @@ func McastHash(s string) uint64 {
 }
 
 func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
-	fmt.Println("Fwd Limit %v.%v.%v", in.Limit.A, in.Limit.B, in.Limit.C)
+	DLog("Fwd in FwdPacket %v", in)
 	out := new(Empty)
 
 	return out, nil
 }
 
 func (s *mcaster) Join(ctx context.Context, in *JoinReq) (*JoinResp, error) {
-	fmt.Println("JoinReq Hierarchy %v", in.Hierarchy)
+	timeNow := Time64()
+	DLog("Join : JoinReq %v", in)
 	out := new(JoinResp)
 	out.Hierarchy = in.Hierarchy
+	out.RttMs = (timeNow - in.Time)/NANO_TO_MILLISEC
+	out.Time = timeNow
+	out.Self = &FingerEntry{Id:&m.self, Hostname:m.hostname}
+	if in.Hierarchy == 1 {
+		out.FEList = NonDupFE_ptr(m.topFT[:])
+	} else if in.Hierarchy == 2 {
+		out.FEList = NonDupFE_ptr(m.midFT[:])
+	} else if in.Hierarchy == 3 {
+		out.FEList = NonDupFE_ptr(m.botFT[:])
+	}
+	DLog("JoinResp %v", out)
 
 	return out, nil
 }
 
 func (s *mcaster) GetFingerEntry(ctx context.Context, in *GetFERequest) (*GetFEResponse, error) {
-	fmt.Println("GetFingerEntry Hierarchy %v", in.Hierarchy)
+	DLog("GetFingerEntry : GetFERequest %v", in)
 	out := new(GetFEResponse)
 	out.Hierarchy = in.Hierarchy
 
@@ -104,7 +180,7 @@ func (s *mcaster) GetFingerEntry(ctx context.Context, in *GetFERequest) (*GetFER
 }
 
 func (s *mcaster) SetSuccessor(ctx context.Context, in *Successor) (*Empty, error) {
-	fmt.Println("SetSuccessor Id %v", in.Id)
+	DLog("SetSuccessor Id %v", in.Id)
 	out := new(Empty)
 
 	return out, nil
@@ -113,15 +189,52 @@ func (s *mcaster) SetSuccessor(ctx context.Context, in *Successor) (*Empty, erro
 func ServeRPCServer (s *grpc.Server, lis net.Listener) {
 	err := s.Serve(lis);
 	if err != nil {
-		fmt.Println("Failed to start server %v", err)
+		log.Fatalf("Failed to start server %v", err)
 	}
+	DLog("Started RPC Server")
 }
 
-func DoJoin(hostname string, joinChan chan JoinResp) {
-	//
+func DoJoin(hostname string, hierarchy int, joinChan chan JoinResp) {
+	MLog("DoJoin hostname %s", hostname)
+	conn, err := grpc.Dial(hostname, grpc.WithInsecure(), grpc.WithBlock());
+	if err!= nil {
+		HLog("Dial failed: fe %v", hostname)
+		return
+	}
+	defer conn.Close()
+
+	c := NewMcasterClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(),
+					   500 * time.Millisecond)
+					   //wait for 500ms
+	defer cancel()
+	joinResp, err := c.Join(ctx, &JoinReq{Hierarchy:int32(hierarchy),
+					      Time: Time64()})
+	if err != nil {
+		HLog("Join to %v failed: %v", hostname, err)
+		return
+	}
+	DLog("Join Resp %v", joinResp)
+	joinChan<-*joinResp
+	DLog("Join Complete")
+
 }
 
+//dont add if hs is already present in ll
+func ListFindAndAdd(ll []string, hs string) ([]string, bool) {
+	DLog("ListFindAndAdd list: %v, add hostname %v", ll, hs)
+	for _,hh := range ll {
+		if hh == hs {
+			return ll, false
+		}
+	}
+
+	return append(ll, hs), true
+}
+
+//find and remove hs from ll
 func ListFindAndPop(ll []string, hs string) []string {
+	DLog("ListFindAndPop list: %v, pop hostname %v", ll, hs)
 	for index,hh := range ll {
 		if hh == hs {
 			ll2 := make([]string, 0)
@@ -166,6 +279,7 @@ func HalfId(n NodeId) NodeId {
 }
 
 func NodeIdBetween(id1, left, right NodeId) bool {
+	DLog("NodeIdBetween: left %v < id1 %v < right %v", left, id1, right)
 	// is left < id1 < right ?
 
 	return false
@@ -175,20 +289,12 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 	if hierarchy > 2 {
 		return
 	}
-	h := McastHash(rootNode)
-	rootId := NodeId{A:h, B:h, C:h}
-	rootFE := FingerEntry{Id:&rootId, Hostname:rootNode}
+	HLog("JoinCluster hierarchy %d, rootNode %s", hierarchy, rootNode)
+
+	hash := McastHash(rootNode)
+	rootId := NodeId{A:hash, B:hash, C:hash}
 	if m.hostname == ucsdNode { // also == rootNode
-		// we are the first one. set everything to rootId
-		for i,_ := range m.topFT {
-			m.topFT[i] = rootFE
-		}
-		for i,_ := range m.midFT {
-			m.midFT[i] = rootFE
-		}
-		for i,_ := range m.botFT {
-			m.botFT[i] = rootFE
-		}
+		HLog("The root node. No clusters joined")
 		return
 	}
 	halfId := HalfId(rootId)
@@ -201,48 +307,56 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 	openReqsR2H := make([]string, 0)
 	openReqsH2R := make([]string, 0)
 
-	openReqsR2H = append(openReqsR2H, rootNode)
-	go DoJoin(rootNode, joinChan)
+	openReqsR2H,_ = ListFindAndAdd(openReqsR2H, rootNode)
+	go DoJoin(rootNode, 1, joinChan)
 
 	for len(openReqsR2H) > 0 {
 	select {
 	case jr := <-joinChan:
 		//send the join req, add it maybe?
-		ctrlChan <- ctrlMsg{msgType:1, h:hierarchy, i:-1, fe:*jr.Self}
+		ctrlChan <- ctrlMsg{msgType:1, hierarchy:hierarchy, i:-1, fe:*jr.Self}
 		openReqsR2H = ListFindAndPop(openReqsR2H, jr.Self.Hostname)
 
 		//check threshold start lower join cluster request if possible
-		rtt_avg := (jr.RttMs + (Time64() - jr.Time)/1000000)
-		if !lowerClusterFound && rtt_avg < m.config.Threshold[h] {
+		rtt_avg := (jr.RttMs + (Time64() - jr.Time)/NANO_TO_MILLISEC)
+		if !lowerClusterFound &&
+		   rtt_avg < m.config.Threshold[hierarchy] {
 			go JoinCluster(m, hierarchy +1, jr.Self.Hostname)
 			lowerClusterFound = true
 		}
 
 		for _, fe := range jr.FEList {
 			if !NodeIdBetween(*fe.Id, rootId, halfId) {
-				openReqsH2R = append(openReqsH2R, fe.Hostname)
+				openReqsH2R, _ = ListFindAndAdd(openReqsH2R,
+								fe.Hostname)
 				continue
 			}
 
-			openReqsR2H = append(openReqsR2H, fe.Hostname)
-			go DoJoin(fe.Hostname, joinChan)
+			find := true
+			openReqsR2H, find = ListFindAndAdd(openReqsR2H,
+							    fe.Hostname)
+			if !find {
+				go DoJoin(fe.Hostname, hierarchy, joinChan)
+			}
 		}
 		//case <-time.After(1 * time.Second):
 		//	//check len before waiting
 	}
 	}
 
-	// same thing for openReqsH2R. but dont add in openReqR2H
+	// same thing for openReqsH2R. but dont add in openReqsR2H
 	for len(openReqsH2R) > 0 {
 	select {
 	case jr := <-joinChan:
 		//send the join req, add it maybe?
-		ctrlChan<-ctrlMsg{msgType:1, h:hierarchy, i:-1, fe:*jr.Self}
+		ctrlChan<-ctrlMsg{msgType:1, hierarchy:hierarchy, i:-1,
+				  fe:*jr.Self}
 		openReqsH2R = ListFindAndPop(openReqsH2R, jr.Self.Hostname)
 
 		//check threshold start lower join cluster request if possible
-		rtt_avg := (jr.RttMs + (Time64() - jr.Time)/1000000)
-		if !lowerClusterFound && rtt_avg < m.config.Threshold[h] {
+		rtt_avg := (jr.RttMs + (Time64() - jr.Time)/NANO_TO_MILLISEC)
+		if !lowerClusterFound &&
+		   rtt_avg < m.config.Threshold[hierarchy] {
 			go JoinCluster(m, hierarchy + 1, jr.Self.Hostname)
 			lowerClusterFound = true
 		}
@@ -252,8 +366,12 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 				continue
 			}
 
-			openReqsH2R = append(openReqsH2R, fe.Hostname)
-			go DoJoin(fe.Hostname, joinChan)
+			find := true
+			openReqsH2R, find = ListFindAndAdd(openReqsH2R,
+							    fe.Hostname)
+			if !find {
+				go DoJoin(fe.Hostname, hierarchy, joinChan)
+			}
 		}
 	}
 	}
@@ -262,76 +380,113 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 		// start own cluster. TODO
 	}
 
-	ctrlChan<-ctrlMsg{msgType:3, h:hierarchy} //signal completion of join
+	DLog("JoinCluster() complete")
+	//signal completion of join
+	ctrlChan<-ctrlMsg{msgType:3, hierarchy:hierarchy}
 }
 
 func FillFingerTable(m *mcaster) {
+	hash := McastHash(m.hostname)
+	MLog("hostname %v: hash %v", m.hostname, hash)
+	rootId := NodeId{A:hash, B:hash, C:hash}
+	rootFE := FingerEntry{Id:&rootId, Hostname:ucsdNode}
+	for i,_ := range m.topFT {
+		m.topFT[i] = rootFE
+	}
+	for i,_ := range m.midFT {
+		m.midFT[i] = rootFE
+	}
+	for i,_ := range m.botFT {
+		m.botFT[i] = rootFE
+	}
+	if m.hostname == ucsdNode {
+		HLog("The root node. return")
+		// we are the first one. set everything to rootId
+		return
+	}
+
 	// code to fill up the finger table
+	//joined := 0 // number of clusters joined
 	for {
 	select {
+	case cmsg := <-ctrlChan:
+		DLog("cmsg %v", cmsg)
+		// receive messages from JoinCluster, add to Finger Tables
 	}
 	}
 }
 
 func DoFwdPkt(fe FingerEntry, pkt FwdPacket, hierarchy int) {
 	//call rpc to fwd it
-	log.Printf("Enter DoFwdPkt to %v.%v.%v", fe.Id.A, fe.Id.B, fe.Id.C)
+	MLog("Enter DoFwdPkt fe %v, hierarchy %d", fe, hierarchy)
 
 	conn, err := grpc.Dial(fe.Hostname, grpc.WithInsecure(), grpc.WithBlock());
 	if err!= nil {
-		log.Printf("Dial failed: fe %v", fe.Hostname)
+		HLog("Dial failed: fe %v", fe.Hostname)
 		return
 	}
 	defer conn.Close()
 
 	new_pkt := new(FwdPacket)
-	hops := pkt.EvalList[len(pkt.EvalList)-1].Hops + 1
+	hops := int32(1)
+	if len(pkt.EvalList) > 0 {
+		hops = pkt.EvalList[len(pkt.EvalList)-1].Hops + 1
+	}
 	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
 	new_pkt.EvalList = append(pkt.EvalList, &EvalInfo{Hops: hops, Time: Time64()})
 	new_pkt.Payload = append(new_pkt.Payload, pkt.Payload...)
+	DLog("DoFwdPkt new_pkt: %v", new_pkt);
 
 	c := NewMcasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(), 500 * time.Millisecond) //wait for 500ms
 	defer cancel()
 	_, err = c.Fwd(ctx, new_pkt)
 	if err!= nil {
-		log.Printf("Fwd to %v failed", fe.Hostname)
+		HLog("Fwd to %v failed: %v", fe.Hostname, err)
 		//send a message to ctrlChan
 		return
 	}
-	log.Printf("FWD to %v complete", fe.Hostname)
-
+	DLog("FWD to %v complete", fe.Hostname)
 }
 
 func Time64() int64 {
 	// returns nanoseconds since 1970
 	// see https://golang.org/pkg/time/#Time.UnixNano
+	// ... The result does not depend on the location ...
 	ts := int64(time.Now().UnixNano())
 	return ts
 }
 
-func NeedToFwd(fe FingerEntry, pkt FwdPacket, h int) bool {
+func NeedToFwd(fe FingerEntry, pkt FwdPacket, hierarchy int) bool {
+	x:= __NeedToFwd(fe, pkt, hierarchy)
+	DLog("NeedToFwd [%v], fe %v, pkt %v, hierarchy %d", x, fe, pkt, hierarchy)
+	return x
+}
+
+func __NeedToFwd(fe FingerEntry, pkt FwdPacket, hierarchy int) bool {
 	s := *pkt.Src
 	//l := *pkt.Limit
 	if fe.Id == nil { //unfilled fingerEntry
 		return false
 	}
 
-	
 	//ERROR: invalid indirect of pkt.Src.B (type int64) ?? WHATISTHIS
 	if s.A == m.self.A && s.B == m.self.B && s.C == m.self.C {
-		// TODO check if this is a repeated entry. dont send
-		return true // we are are the source. fwd to everyone we know
+		// we are are the source. fwd to everyone we know, except self
+		if fe.Hostname == m.hostname {
+			return false
+		}
+		return true
 	}
 
 	if s.A != m.self.A {
 		// diff top level hierarchy:
 		//      - fwd in top level within limit
 		//      - fwd to all in bottom and lower levels
-		if h == 1 && fe.Id.A < pkt.Limit.A {
+		if hierarchy == 1 && fe.Id.A < pkt.Limit.A {
 			return true
 		}
-		if h > 1 {
+		if hierarchy > 1 {
 			return true
 		}
 
@@ -340,10 +495,10 @@ func NeedToFwd(fe FingerEntry, pkt FwdPacket, h int) bool {
 		// same top level, but diff mid level hierarchy:
 		//      - fwd in mid level within limit
 		//      - fwd to all in bottom and lower levels
-		if h == 2 && fe.Id.B < pkt.Limit.B {
+		if hierarchy == 2 && fe.Id.B < pkt.Limit.B {
 			return true
 		}
-		if h > 2 {
+		if hierarchy > 2 {
 			return true
 		}
 
@@ -351,7 +506,7 @@ func NeedToFwd(fe FingerEntry, pkt FwdPacket, h int) bool {
 	} else {
 		// same top and mid level hierarchy:
 		//  - fwd in bottom within limit
-		if h == 3 && fe.Id.C < pkt.Limit.C {
+		if hierarchy == 3 && fe.Id.C < pkt.Limit.C {
 			return true
 		}
 
@@ -374,14 +529,13 @@ func ReadConfig(file string) Configuration {
 		log.Fatalf("Config file read failed: %v", err)
 	}
 
-	log.Printf("Configuration: MulticastFlag %v, Port %v",
-			c.MulticastFlag, c.Port)
+	MLog("Configuration: %v", c)
 	return c
 }
 
 func StartMcast() {
 	for {
-		log.Printf("Mcast start")
+		DLog("Mcast start")
 		//send out X bytes
 		xbytes := make([]byte, m.config.XBytes)//zeros
 		pkt := new(FwdPacket)
@@ -392,25 +546,69 @@ func StartMcast() {
 
 		// sleep for Y seconds
 		time.Sleep(time.Duration(m.config.YSeconds) * time.Second)
-		log.Printf("Mcast Complete")
+		DLog("Mcast Complete")
 	}
+}
+
+func NonDupFE_ptr(felist []FingerEntry) []*FingerEntry {
+	retlist := make([]*FingerEntry, 0)
+	retlist = append(retlist, &felist[0])
+	for i := 1; i < len(felist); i++ {
+		if felist[i].Hostname == felist[i-1].Hostname {
+			continue
+		} else if felist[i].Hostname == m.hostname {
+			continue
+		}
+		retlist = append(retlist, &felist[i])
+	}
+	DLog("NonDupFE_ptr retlist: %v", retlist)
+	return retlist
+}
+
+func NonDupFE(felist []FingerEntry) []FingerEntry {
+	retlist := make([]FingerEntry, 0)
+	retlist = append(retlist, felist[0])
+	for i := 1; i < len(felist); i++ {
+		if felist[i].Hostname == felist[i-1].Hostname {
+			continue
+		} else if felist[i].Hostname == m.hostname {
+			continue
+		}
+		retlist = append(retlist, felist[i])
+	}
+	DLog("NonDupFE retlist: %v", retlist)
+	return retlist
 }
 
 func main() {
 	fmt.Println("--- Hierarchical P2P Mcast ---")
+	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lmicroseconds)
 
+	m = new(mcaster)
+	progArgs := os.Args
+	if len(progArgs) != 3 {
+		log.Fatalf("Insufficient Args. Usage: ./hp2pcast <config>.json <port>")
+	} else {
+		MLog("Args %v", progArgs[0])
+	}
+	progArgs = progArgs[1:]
+
+	m.config = ReadConfig(progArgs[0])
+	m.hostname = m.config.Hostname
+	//m.config.UcsdNode = "localhost:50000"
+	ucsdNode = m.config.UcsdNode
+	m.s = grpc.NewServer()
+
+	port := ":" + progArgs[1]
+	m.hostname = m.hostname + port
+	m.config.Hostname = m.hostname
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalln("failed to open tcp socket: %v", err)
 	}
-
-	m = new(mcaster)
-	m.s = grpc.NewServer()
-	m.config = ReadConfig(string("config.json"))
-	m.hostname = m.config.Hostname
-	ucsdNode = m.config.UcsdNode
 	RegisterMcasterServer(m.s, m)
 
+	HLog("Start RPC server")
 	go ServeRPCServer(m.s, lis)
 
 	go JoinCluster(m, 1, ucsdNode)
@@ -424,19 +622,20 @@ func main() {
 	select {
 
 	case pkt := <-pktChan:
-		log.Printf("received pkt")
+		MLog("received pkt Limit %v, Src %v", pkt.Limit, pkt.Src)
+		DLog("received pkt %v", pkt)
 		//decide fingertable based on m.self and pkt.src
-		for _, fe := range m.topFT {
+		for _, fe := range NonDupFE(m.topFT[:]) {
 			if NeedToFwd(fe, pkt, 1) {
 				go DoFwdPkt(fe, pkt, 1)
 			}
 		}
-		for _, fe := range m.midFT {
+		for _, fe := range NonDupFE(m.midFT[:]) {
 			if NeedToFwd(fe, pkt, 2) {
 				go DoFwdPkt(fe, pkt, 2)
 			}
 		}
-		for _, fe := range m.botFT {
+		for _, fe := range NonDupFE(m.botFT[:]) {
 			if NeedToFwd(fe, pkt, 3) {
 				go DoFwdPkt(fe, pkt, 3)
 			}
@@ -446,12 +645,12 @@ func main() {
 	//case cmsg := <-ctrlChan:
 		// TODO: handle failures
 		//if cmsg.msgType == 1 {
-		//	if cmsg.h == 1 {
+		//	if cmsg.hierarchy == 1 {
 		//		go DoGetFE(m.topFT[i], )
 		//	}
-		//	go DoGetFE(cmsg.h, cmsg.i)
+		//	go DoGetFE(cmsg.hierarchy, cmsg.i)
 		//} else if cmsg.msgType == 2 {
-		//	if cmsg.h == 1 {
+		//	if cmsg.hierarchy == 1 {
 		//		m.topFT[i] = fe
 		//	}
 		//}
