@@ -449,6 +449,55 @@ func FillFingerTable(m *mcaster) {
 	}
 }
 
+func(s *mcaster) getsuccessor *node {
+	return fingertable[0] }
+
+func (s *mcaster) searchtable(key string) (string,error){
+	Hashkey = s.Hash(key)
+	succ,err = s.findSuccessor(Hashkey)
+	return succ.hostname,err
+}
+
+func (s *mcaster) fillFingerTable(i int) (int, error) {
+	i = (i + 1) % s.config.ringSize // half ring
+	fingerStart := s.fingerStart(i)
+	finger, err := s.findSuccessorForFingers(fingerStart)
+
+	chord.fingerTable[i] = finger
+
+	return i, nil
+}
+
+func (s *mcaster) fingerStart(i int) []byte {
+	currID := new(big.Int).SetBytes(chord.Id)
+	offset := new(big.Int).Exp(big.NewInt(2), big.NewInt(int64(i)), nil)
+	maxVal := big.NewInt(0).Exp(big.NewInt(2), big.NewInt(int64(chord.config.ringSize)), nil)
+	start := new(big.Int).Add(currID, offset)
+	start.Mod(start, maxVal)
+	if len(start.Bytes()) == 0 {
+		return []byte{0}
+	}
+	return start.Bytes()
+}
+
+func (s *mcaster) findSuccessorForFingers(id []byte) (*chordnode, error) {
+	//pred, err := chord.findPredecessorForFingers(id)
+
+	//succ, err := chord.getSuccessorRPC(pred)
+	succ, err := chord.getSuccessorRPC(s.chordnode)
+	return succ, err
+}
+
+func (s *mcaster) getSuccessorRPC(remote *chordnode) (*chordnode, error) {
+	client, err := s.connectRemote(remote.hostname)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := client.GetSuccessor(context.Background(), &chordrpc.NN{}) //NN: empty message
+	return result, err
+}
+
 func DoFwdPkt(fe FingerEntry, pkt FwdPacket, hierarchy int) {
 	//call rpc to fwd it
 	MLog("Enter DoFwdPkt fe %v, hierarchy %d", fe, hierarchy)
