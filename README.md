@@ -21,3 +21,6 @@ add this to ~/.profile:
     ./codegen mcast.proto
     make
 
+### Run
+    ./hp2pmcast <config>.json <port>
+
