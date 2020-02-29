@@ -425,6 +425,8 @@ func FillFingerTable(m *mcaster) {
 	}
 
 	// code to fill up the finger table
+	s.fillFT(i,h)	
+	//
 	joined := 0 // number of clusters joined
 	for {
 	select {
