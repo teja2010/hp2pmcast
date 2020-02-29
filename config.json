@@ -1,0 +1,14 @@
+{
+	"hostname":"localhost",
+	"MulticastFlag":1,
+	"XBytes":100,
+	"YSeconds":100,
+	"Threshold":[65536, 100, 10, 1],
+	"Dlog": 1,
+	"LogColor": 1,
+	"UcsdNode":"localhost:50000",
+
+	"COMMENT_UcsdNode": "something.ucsd.edu:70000",
+	"LAST_ONE": 1
+}
+
