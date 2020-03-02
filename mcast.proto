@@ -17,9 +17,10 @@ message JoinResp {
 }
 
 message NodeId {
-	uint64 A = 1;
-	uint64 B = 2;
-	uint64 C = 3;
+	repeated uint64 ids = 1;
+	//uint64 A = 1;
+	//uint64 B = 2;
+	//uint64 C = 3;
 }
 
 message FingerEntry {
@@ -48,8 +49,9 @@ message GetFERequest {
 
 message GetFEResponse {
 	int32 hierarchy = 1;
-	NodeId limit = 3;
-	FingerEntry newFE = 2;
+	NodeId limit = 2;
+	NodeId src = 3;
+	FingerEntry newFE = 4;
 }
 
 message Successor {
