@@ -60,7 +60,7 @@ func GetHostName(hostname string) string {
 }
 
 const (
-	MSG_TYPE_RUN_GETFE       = iota
+	MSG_TYPE_RUN_GETFE       = iota  //0
 	MSG_TYPE_ADD_NODEID
 	MSG_TYPE_JOIN_COMPLETE
 	MSG_TYPE_FAILED_FE
@@ -430,7 +430,7 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 	openReqsH2R := make([]string, 0)
 
 	openReqsR2H,_ = ListFindAndAdd(openReqsR2H, rootNode)
-	go DoJoin(rootNode, 1, joinChan)
+	go DoJoin(rootNode, hierarchy, joinChan)
 
 	for len(openReqsR2H) > 0 {
 	select {
@@ -512,9 +512,7 @@ func JoinCluster(m *mcaster, hierarchy int, rootNode string) {
 }
 
 func FillFingerTable(m *mcaster) {
-	hash := McastHash(m.hostname)
-	MLog("hostname %v: hash %v", m.hostname, hash)
-	selfId := NodeId{A:hash, B:hash, C:hash}
+	selfId := m.id
 	selfFE := FingerEntry{Id:&selfId, Hostname:m.hostname}
 	for i,_ := range m.topFT {
 		m.topFT[i] = selfFE
@@ -539,9 +537,9 @@ func FillFingerTable(m *mcaster) {
 		DLog("cmsg %v", cmsg)
 		// receive messages from JoinCluster, add to Finger Tables
 		switch cmsg.msgType {
-		case MSG_TYPE_RUN_GETFE:
+		case MSG_TYPE_RUN_GETFE:  //0
 
-		case MSG_TYPE_JOIN_COMPLETE :
+		case MSG_TYPE_JOIN_COMPLETE : //2
 			joined = joined + 1
 			if joined == 3 {
 				MLog("Joined all three clusters")
@@ -717,7 +715,7 @@ func ValidFE(felist []FingerEntry) []FingerEntry {
 	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
 
 	retlist := make([]FingerEntry, 0)
-	for i := len(felist); i >= 0; i-- { // return in reverse
+	for i := len(felist)-1; i >= 0; i-- { // return in reverse
 		if !isEqualFE(felist[i], selfFE) { // add non invalid entries
 			retlist = append(retlist, felist[i])
 		}
@@ -764,6 +762,11 @@ func main() {
 	port := ":" + progArgs[1]
 	m.hostname = m.hostname + port
 	m.config.Hostname = m.hostname
+
+	hash := McastHash(m.hostname)
+	MLog("hostname %v: hash %v", m.hostname, hash)
+	m.id = NodeId{A:hash, B:hash, C:hash}
+
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalln("failed to open tcp socket: %v", err)
@@ -821,9 +824,12 @@ func main() {
 		case MSG_TYPE_RUN_GETFE:
 			//FIXME
 		case MSG_TYPE_ADD_NODEID:
+			DLog("MSG_TYPE_ADD_NODEID, add fe %v", cmsg.fe)
 			addFE(cmsg.hierarchy, cmsg.fe)
 
 		case MSG_TYPE_FAILED_FE:
+
+			DLog("MSG_TYPE_ADD_NODEID, add fe %v", cmsg.fe)
 			// 0. Invalidate the fe
 			invalidateFE(cmsg.fe, cmsg.hierarchy)
 			if cmsg.hierarchy == 3 {
