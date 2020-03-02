@@ -29,6 +29,7 @@ var (
 	m *mcaster
 	pktChan = make(chan FwdPacket, 100)
 	ctrlChan = make(chan ctrlMsg, 10)
+	selfFE FingerEntry
 )
 
 type Configuration struct {
@@ -281,10 +282,6 @@ func ListFindAndAdd(ll []string, hs string) ([]string, bool) {
 func invalidateFE(fe FingerEntry, hierarchy int) {
 	//set it self.id and self.hostname. it is invalid
 
-	selfId := new(NodeId)
-	*selfId = m.id
-	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
-
 	for i := 0; i < FTsize; i++ {
 		if isEqualFE(m.FT[hierarchy][i], fe) {
 			m.FT[hierarchy][i] = selfFE
@@ -293,9 +290,6 @@ func invalidateFE(fe FingerEntry, hierarchy int) {
 }
 
 func getRandomFE(hierarchy int) (FingerEntry, error) {
-	selfId := new(NodeId)
-	*selfId = m.id
-	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
 
 	rr := rand.Intn(FTsize)
 	for i := 0; i < FTsize; i++ {
@@ -541,9 +535,6 @@ func JoinCluster(hierarchy int, rootNode string) {
 }
 
 func FillFingerTable(m *mcaster) {
-	var selfId NodeId
-	selfId.Ids = append(selfId.Ids, m.id.Ids...)
-	selfFE := FingerEntry{Id:&selfId, Hostname:m.hostname}
 	for h:=0 ; h < m.config.Hierarchies; h++ {
 		for i,_ := range m.FT[h] {
 			m.FT[h][i] = selfFE // set everything to invalid FE
@@ -709,9 +700,6 @@ func StartMcast() {
 }
 
 func ValidFE_ptr(felist []FingerEntry) []*FingerEntry {
-	selfId := new(NodeId)
-	*selfId = m.id
-	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
 
 	retlist := make([]*FingerEntry, 0)
 	for i := 0; i < len(felist); i++ {
@@ -724,9 +712,6 @@ func ValidFE_ptr(felist []FingerEntry) []*FingerEntry {
 }
 
 func ValidFE(felist []FingerEntry) []FingerEntry {
-	selfId := new(NodeId)
-	*selfId = m.id
-	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
 
 	retlist := make([]FingerEntry, 0)
 	for i := len(felist)-1; i >= 0; i-- { // return in reverse
@@ -776,8 +761,8 @@ func main() {
 
 	//fill up FT with selfId
 	selfId := new(NodeId)
-	*selfId = m.id
-	selfFE := FingerEntry{Id:selfId, Hostname:m.hostname}
+	selfId.Ids = append(selfId.Ids, m.id.Ids...)
+	selfFE = FingerEntry{Id:selfId, Hostname:m.hostname}
 	for h:=0; h<m.config.Hierarchies; h++ {
 		var hEntry []FingerEntry
 		m.FT = append(m.FT, hEntry)
