@@ -1,6 +1,7 @@
 {
 	"hostname":"localhost",
 	"MulticastFlag":0,
+	"Hierarchies":3,
 	"XBytes":100,
 	"YSeconds":1,
 	"Threshold":[65536, 100, 10, 1],
