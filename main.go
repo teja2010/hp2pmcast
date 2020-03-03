@@ -500,8 +500,10 @@ func (s *mcaster) findSuccessorForFingers(id int, h int) (*NodeId, error) {
 
 func (s *mcaster) findPredecessorForFingers(id int, h int) (*NodeId, error) {
 	closest = findClosestPrecedingNode(id,h)
-	//if closest.Id = s.Id
-	//closestSucc, err := chord.getSuccessorByRPC(closest,h)
+	// if closest.Id = s.Id
+	// closestSucc, err := s.getSuccessorByRPC(closest,h)
+	// if !between(id, closest.Id, closestSucc.Id)
+	//	s.findClosestPrecedingNodeByRPC(id,h)
 	return closestSucc, err
 
 }
