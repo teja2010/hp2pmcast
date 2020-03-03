@@ -56,7 +56,10 @@ message GetFEResponse {
 
 message Successor {
 	FingerEntry FE = 1;	// entry that the receiver might want to add
-	NodeId limit = 2;	// limit till which the receiver should fwd
+}
+
+message Predecessor {
+	FingerEntry FE = 1;	// entry that the receiver might want to add
 }
 
 message Empty {
@@ -67,5 +70,6 @@ service mcaster {
 	rpc Fwd(FwdPacket) returns (Empty) {}
 	rpc GetFingerEntry(GetFERequest) returns (GetFEResponse) {}
 	rpc SetSuccessor(Successor) returns (Empty) {}
+	rpc SetPredecessor(Predecessor) returns (Empty) {}
 }
 
