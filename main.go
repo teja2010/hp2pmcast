@@ -29,7 +29,9 @@ var (
 	m *mcaster
 	pktChan = make(chan FwdPacket, 100)
 	ctrlChan = make(chan ctrlMsg, 10)
-	selfFE FingerEntry
+	zeroFE FingerEntry
+	initState = true // true till we complete filling fingertables.
+			 // dont answer any RPC requests
 )
 
 type Configuration struct {
@@ -63,8 +65,9 @@ func GetHostName(hostname string) string {
 const (
 	MSG_TYPE_RUN_GETFE       = iota  //0
 	MSG_TYPE_ADD_NODEID
-	MSG_TYPE_JOIN_COMPLETE
+	MSG_TYPE_JOIN_COMPLETE           //2
 	MSG_TYPE_FAILED_FE
+	MSG_TYPE_FIND_FE                  //4
 )
 
 // once a node hostname and Id are found (only in top and mid lvl)
@@ -79,12 +82,15 @@ const (
 
 type ctrlMsg struct {
 	msgType int
-	// =1 : run do_getFE(), node at hierarchy, index i is invalid
-	// =2 : update nodeId at hierarchy, i with fe
-	// =3 : JoinCluster at hierarchy is complete
-	// =4 : Sending to fe has failed, replace the finger entry
+	// =0 : run do_getFE(), node at hierarchy, index i is invalid
+	// =1 : update nodeId at hierarchy, i with fe
+	// =2 : JoinCluster at hierarchy is complete
+	// =3 : Sending to fe has failed, replace the finger entry
+	// =4 : return a FingerEntry within limit at hierarchy
 	hierarchy int
 	fe FingerEntry
+	limit NodeId
+	feChan chan FingerEntry
 }
 func (c ctrlMsg) String() string {
 	msgTypeStr := ""
@@ -97,6 +103,10 @@ func (c ctrlMsg) String() string {
 		msgTypeStr = "MSG_TYPE_JOIN_COMPLETE"
 	case MSG_TYPE_FAILED_FE:
 		msgTypeStr = "MSG_TYPE_FAILED_FE"
+	case MSG_TYPE_FIND_FE:
+		msgTypeStr = "MSG_TYPE_FIND_FE"
+	default:
+		msgTypeStr = "UNKNOWN MSGTYPE:" + strconv.Itoa(c.msgType)
 	}
 	return fmt.Sprintf("{ msgType %v, hierarchy %v, " +
 			   "FingerEntry %v}",
@@ -110,6 +120,8 @@ type mcaster struct {
 	id NodeId
 	hostname string
 	FT [][]FingerEntry
+	succ []FingerEntry
+	pred []FingerEntry
 	config Configuration
 }
 
@@ -174,8 +186,16 @@ func McastHash(s string) uint64 {
 }
 
 func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
-	DLog("Fwd in FwdPacket %v", in)
+	DLog("Fwd in: FwdPacket %v", in)
+	if initState {
+		return nil, errors.New("Initializing...")
+	}
 	out := new(Empty)
+
+	// todo log the arrival of the packet, send it out periodically
+
+	// send to pktChan, it can decide to forward the pkt to others
+	pktChan<-*in
 
 	return out, nil
 }
@@ -183,6 +203,10 @@ func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
 func (s *mcaster) Join(ctx context.Context, in *JoinReq) (*JoinResp, error) {
 	timeNow := Time64()
 	DLog("Join : JoinReq %v", in)
+	if initState {
+		return nil, errors.New("Initializing...")
+	}
+
 	out := new(JoinResp)
 	out.Hierarchy = in.Hierarchy
 	out.RttMs = (timeNow - in.Time)/NANO_TO_MILLISEC
@@ -195,16 +219,47 @@ func (s *mcaster) Join(ctx context.Context, in *JoinReq) (*JoinResp, error) {
 }
 
 func (s *mcaster) GetFingerEntry(ctx context.Context, in *GetFERequest) (*GetFEResponse, error) {
-	DLog("GetFingerEntry : GetFERequest %v", in)
+	//DLog("GetFingerEntry : GetFERequest %v", in)
+	if initState {
+		return nil, errors.New("Initializing...")
+	}
+
 	out := new(GetFEResponse)
 	out.Hierarchy = in.Hierarchy
 	out.Src = &m.id
+
+	if !isValidNodeId(*in.Limit) {
+		return nil, errors.New("Invalid Limit")
+	}
+
+	feChan := make(chan FingerEntry, 1)
+	ctrlChan <- ctrlMsg{msgType:MSG_TYPE_FIND_FE,
+			    hierarchy:int(in.Hierarchy),
+			    limit:*in.Limit,
+			    feChan:feChan}
+
+	NewFE := <-feChan // blocked
+	out.NewFE = &NewFE
+	//DLog("GetFingerEntry Response: %v", out)
 
 	return out, nil
 }
 
 func (s *mcaster) SetSuccessor(ctx context.Context, in *Successor) (*Empty, error) {
 	DLog("SetSuccessor Id %v", in.FE.Id)
+	if initState {
+		return nil, errors.New("Initializing...")
+	}
+	out := new(Empty)
+
+	return out, nil
+}
+
+func (s *mcaster) SetPredecessor(ctx context.Context, in *Predecessor) (*Empty, error) {
+	DLog("SetPredecessor Id %v", in.FE.Id)
+	if initState {
+		return nil, errors.New("Initializing...")
+	}
 	out := new(Empty)
 
 	return out, nil
@@ -284,7 +339,7 @@ func invalidateFE(fe FingerEntry, hierarchy int) {
 
 	for i := 0; i < FTsize; i++ {
 		if isEqualFE(m.FT[hierarchy][i], fe) {
-			m.FT[hierarchy][i] = selfFE
+			m.FT[hierarchy][i] = zeroFE
 		}
 	}
 }
@@ -293,18 +348,18 @@ func getRandomFE(hierarchy int) (FingerEntry, error) {
 
 	rr := rand.Intn(FTsize)
 	for i := 0; i < FTsize; i++ {
-		if isEqualFE(m.FT[hierarchy][(rr + i)%FTsize], selfFE) {
+		if isEqualFE(m.FT[hierarchy][(rr + i)%FTsize], zeroFE) {
 			return m.FT[hierarchy][(rr + i)%FTsize], nil
 		}
 	}
 
-	return selfFE, errors.New("Unable to find a rand FE")
+	return zeroFE, errors.New("Unable to find a rand FE")
 }
 
 func DoGetFE(dest string, hierarchy int, limit NodeId) {
 	// send a req to fe, @ hierarchy, get an entry within limit
 
-	MLog("Enter DoGetFE dest %v, hierarchy %d, limit %v",
+	DLog("Enter DoGetFE dest %v, hierarchy %d, limit %v",
 		dest, hierarchy, limit)
 
 	conn, err := grpc.Dial(dest, grpc.WithInsecure(), grpc.WithBlock());
@@ -346,6 +401,7 @@ func DoGetFE(dest string, hierarchy int, limit NodeId) {
 		// send another GetFE request.
 		ctrlChan <- ctrlMsg{msgType:MSG_TYPE_RUN_GETFE,
 				    hierarchy : hierarchy,
+				    limit: limit,
 				    fe : *resp.NewFE,
 				   }
 	}
@@ -382,25 +438,25 @@ func HalfId(n NodeId) NodeId {
 
 func NodeIdBetween(id, left, right NodeId, hierarchy int) bool {
 	ret := __NodeIdBetween(id, left, right, hierarchy)
-	DLog("NodeIdBetween[%v]: left %v < id %v < right %v",
-		ret, left, id, right)
+//	DLog("NodeIdBetween[%v]: left %v < id %v < right %v",
+//		ret, left, id, right)
 	return ret
 }
 
 func __NodeIdBetween(id, left, right NodeId, hierarchy int) bool {
-	// is left < id < right ?
+	// is left <= id < right ?
 	if left.Ids[hierarchy] < right.Ids[hierarchy] {
-		// -----|------|-------|-----
-		//     left < id  <  right
-		return ( left.Ids[hierarchy] < id.Ids[hierarchy] &&
-		        right.Ids[hierarchy] > id.Ids[hierarchy] )
+		// -----|-------|-------|-----
+		//     left <= id  <  right
+		return ( left.Ids[hierarchy] <= id.Ids[hierarchy] &&
+		        right.Ids[hierarchy] >  id.Ids[hierarchy] )
 	} else if left.Ids[hierarchy] > right.Ids[hierarchy] {
 		// -----|------|-------|-----  OR  -----|-------|-------|-----
 		//     id  <  right < left            right  > left >  id
-		return ((  left.Ids[hierarchy] > id.Ids[hierarchy] &&
-			  right.Ids[hierarchy] > id.Ids[hierarchy] ) ||
-		        (  left.Ids[hierarchy] < id.Ids[hierarchy] &&
-			  right.Ids[hierarchy] < id.Ids[hierarchy] ))
+		return ((  left.Ids[hierarchy] >= id.Ids[hierarchy] &&
+			  right.Ids[hierarchy] >  id.Ids[hierarchy] ) ||
+		        (  left.Ids[hierarchy] <= id.Ids[hierarchy] &&
+			  right.Ids[hierarchy] <  id.Ids[hierarchy] ))
 	}
 
 	return false
@@ -408,6 +464,7 @@ func __NodeIdBetween(id, left, right NodeId, hierarchy int) bool {
 
 func JoinChordRing(rootNode string) {
 	HLog("JoinChordRing rootNode %v", rootNode)
+	MLog("My ID %v", m.id.Ids)
 
 	// for each empty entry send a getFE request
 	//    send getFE requests based on responses.
@@ -420,6 +477,8 @@ func JoinChordRing(rootNode string) {
 						 (uint64(1) <<i) )
 		go DoGetFE(rootNode, CHORD_HIERARCHY, limitId)
 	}
+
+	ctrlChan<-ctrlMsg{msgType:MSG_TYPE_JOIN_COMPLETE, hierarchy:CHORD_HIERARCHY}
 }
 
 func JoinCluster(hierarchy int, rootNode string) {
@@ -461,6 +520,7 @@ func JoinCluster(hierarchy int, rootNode string) {
 		//send the join req, add it maybe?
 		ctrlChan <- ctrlMsg{msgType:MSG_TYPE_RUN_GETFE,
 				    hierarchy:hierarchy,
+				    limit: NodeId{Ids:[]uint64{}},
 				    fe:*jr.Self,
 				   }
 		openReqsR2H = ListFindAndPop(openReqsR2H, jr.Self.Hostname)
@@ -471,6 +531,7 @@ func JoinCluster(hierarchy int, rootNode string) {
 		   rtt_avg < m.config.Threshold[hierarchy] {
 			go JoinCluster(hierarchy -1, jr.Self.Hostname)
 			lowerClusterFound = true
+			m.id.Ids[hierarchy] = jr.Self.Id.Ids[hierarchy]
 		}
 
 		for _, fe := range jr.FEList {
@@ -508,6 +569,7 @@ func JoinCluster(hierarchy int, rootNode string) {
 		   rtt_avg < m.config.Threshold[hierarchy] {
 			go JoinCluster(hierarchy - 1, jr.Self.Hostname)
 			lowerClusterFound = true
+			m.id.Ids[hierarchy] = jr.Self.Id.Ids[hierarchy]
 		}
 
 		for _, fe := range jr.FEList {
@@ -527,6 +589,10 @@ func JoinCluster(hierarchy int, rootNode string) {
 
 	if !lowerClusterFound {
 		// start own cluster. TODO
+		for h:=hierarchy; h >= CHORD_HIERARCHY; h-- {
+			ctrlChan<-ctrlMsg{msgType:MSG_TYPE_JOIN_COMPLETE,
+					  hierarchy:hierarchy}
+		}
 	}
 
 	DLog("JoinCluster() complete")
@@ -537,13 +603,17 @@ func JoinCluster(hierarchy int, rootNode string) {
 func FillFingerTable(m *mcaster) {
 	for h:=0 ; h < m.config.Hierarchies; h++ {
 		for i,_ := range m.FT[h] {
-			m.FT[h][i] = selfFE // set everything to invalid FE
+			m.FT[h][i] = zeroFE // set everything to invalid FE
 		}
 	}
 	if m.hostname == ucsdNode {
 		HLog("The root node. return")
-		// we are the first one. everything is set to selfFE
+		// we are the first one. everything is set to zeroFE
 		return
+	}
+	for h:=0 ; h < m.config.Hierarchies; h++ {
+		m.succ = append(m.succ, zeroFE)
+		m.pred = append(m.pred, zeroFE)
 	}
 
 	// code to fill up the finger table
@@ -555,10 +625,21 @@ func FillFingerTable(m *mcaster) {
 		// receive messages from JoinCluster, add to Finger Tables
 		switch cmsg.msgType {
 		case MSG_TYPE_RUN_GETFE:  //0
-
+			var limit NodeId
+			if isValidNodeId(cmsg.limit) {
+				limit = cmsg.limit
+			} else {
+				limit.Ids = append(limit.Ids, cmsg.fe.Id.Ids...)
+				limit.Ids[cmsg.hierarchy]++
+			}
+			go DoGetFE(cmsg.fe.Hostname, cmsg.hierarchy,
+					limit)
 		case MSG_TYPE_ADD_NODEID: //1
+			DLog("MSG_TYPE_ADD_NODEID, add fe %v", cmsg.fe)
+			addFE(cmsg.hierarchy, cmsg.fe)
 
 		case MSG_TYPE_JOIN_COMPLETE : //2
+			DLog("MSG_TYPE_ADD_NODEID, hier %v", cmsg.hierarchy)
 			joined = joined + 1
 			if joined == m.config.Hierarchies {
 				MLog("Joined all %d clusters", joined)
@@ -684,6 +765,13 @@ func ReadConfig(file string) Configuration {
 
 func StartMcast() {
 	for {
+		// sleep for Y seconds
+		time.Sleep(time.Duration(m.config.YSeconds) * time.Second)
+
+		if initState {
+			continue
+		}
+
 		DLog("Mcast start")
 		//send out X bytes
 		xbytes := make([]byte, m.config.XBytes)//zeros
@@ -692,18 +780,20 @@ func StartMcast() {
 		self := m.id
 		pkt.Src = &self
 		pktChan <- *pkt
-
-		// sleep for Y seconds
-		time.Sleep(time.Duration(m.config.YSeconds) * time.Second)
 		DLog("Mcast Complete")
+
 	}
+}
+
+func stabilizeRing() {
+	// set succesor and predecessor for each ring
 }
 
 func ValidFE_ptr(felist []FingerEntry) []*FingerEntry {
 
 	retlist := make([]*FingerEntry, 0)
 	for i := 0; i < len(felist); i++ {
-		if !isEqualFE(felist[i], selfFE) { // add non invalid entries
+		if !isEqualFE(felist[i], zeroFE) { // dont add invalid entries
 			retlist = append(retlist, &felist[i])
 		}
 	}
@@ -712,19 +802,77 @@ func ValidFE_ptr(felist []FingerEntry) []*FingerEntry {
 }
 
 func ValidFE(felist []FingerEntry) []FingerEntry {
-
 	retlist := make([]FingerEntry, 0)
+	DLog("retlist pre %v", retlist)
 	for i := len(felist)-1; i >= 0; i-- { // return in reverse
-		if !isEqualFE(felist[i], selfFE) { // add non invalid entries
+		if !isEqualFE(felist[i], zeroFE) { // dont add invalid entries
 			retlist = append(retlist, felist[i])
 		}
 	}
-	DLog("ValidFE retlist: %v", retlist)
+	DLog("ValidFE retlist: %v, len %d", retlist, len(retlist))
 	return retlist
 }
 
+// find largest finger entry which is within limit
+func findFE(hierarchy int, limit NodeId) FingerEntry {
+	// find the largest FT entry which is less than limit
+	for i:=FTsize -1 ; i>=0; i-- {
+		if (isValidNodeId(*m.FT[hierarchy][i].Id) &&
+		    NodeIdBetween(*m.FT[hierarchy][i].Id,
+				   m.id, limit, hierarchy) ) {
+			return m.FT[hierarchy][i]
+		}
+	}
+
+	// nothing matches, all of them are larger than limit. send self
+	selfId := m.id
+	return FingerEntry{Id:&selfId, Hostname:m.hostname}
+}
+
 func addFE(hierarchy int, fe FingerEntry) {
-	//__addFE(&m.FT[hierarchy], fe) // TODO use Runze's func
+	// find the smallest FT entry where fe can be added
+	for i:= uint32(0) ; i< FTsize; i++ {
+		var limitId NodeId //limit for FE[i]'s nodeId A/2 or A/4 ...
+		limitId.Ids = append(limitId.Ids, m.id.Ids...)
+		limitId.Ids[hierarchy] = (limitId.Ids[hierarchy] +
+						 (uint64(1) <<i))
+
+		if !NodeIdBetween(*fe.Id, m.id, limitId, hierarchy) {
+			continue
+		}
+
+		if (isValidNodeId(*m.FT[hierarchy][i].Id) &&
+		    NodeIdBetween(*m.FT[hierarchy][i].Id,
+				  *fe.Id, limitId, hierarchy)) {
+				//it is valid and closer to limit.
+				//No changes.
+				break
+		}
+
+		// else the entry must be replaced
+		m.FT[hierarchy][i] = fe
+		MLog("addFE FT[%d][%d] = %v", hierarchy, i, fe)
+		break
+	}
+
+	// case where fe < self < self + 2^63
+	// check if this can be added as succ.
+	if ( !isValidNodeId(*m.succ[hierarchy].Id) ||
+	     NodeIdBetween(*fe.Id, *m.succ[hierarchy].Id, m.id, hierarchy)) {
+		if !isEqualNodeId(*m.succ[hierarchy].Id, *fe.Id) {
+			m.succ[hierarchy] = fe
+			MLog("addFE added fe %v as succ[%d]", fe, hierarchy)
+		}
+	}
+
+	// check if this can be added as pred.
+	if ( !isValidNodeId(*m.pred[hierarchy].Id) ||
+	     NodeIdBetween(*fe.Id, *m.pred[hierarchy].Id, m.id, hierarchy)) {
+		if !isEqualNodeId(*m.pred[hierarchy].Id, *fe.Id) {
+			m.pred[hierarchy] = fe
+			MLog("addFE added fe %v as pred[%d]", fe, hierarchy)
+		}
+	}
 }
 
 func main() {
@@ -760,14 +908,15 @@ func main() {
 	}
 
 	//fill up FT with selfId
-	selfId := new(NodeId)
-	selfId.Ids = append(selfId.Ids, m.id.Ids...)
-	selfFE = FingerEntry{Id:selfId, Hostname:m.hostname}
+	zeroId := new(NodeId)
+	zeros := make([]uint64,m.config.Hierarchies)
+	zeroId.Ids = append(zeroId.Ids, zeros...)
+	zeroFE = FingerEntry{Id:zeroId, Hostname:""}
 	for h:=0; h<m.config.Hierarchies; h++ {
 		var hEntry []FingerEntry
 		m.FT = append(m.FT, hEntry)
 		for i:=0; i<FTsize; i++ {
-			m.FT[h] = append(m.FT[h], selfFE)
+			m.FT[h] = append(m.FT[h], zeroFE)
 		}
 	}
 
@@ -780,13 +929,15 @@ func main() {
 	HLog("Start RPC server")
 	go ServeRPCServer(m.s, lis)
 
-	
 	go JoinCluster(m.config.Hierarchies -1, ucsdNode)
 	FillFingerTable(m)
 
 	if m.config.MulticastFlag == 1 {
 		go StartMcast()
 	}
+
+	stabilizeRing()
+	initState = false
 
 	for {
 	select {
@@ -814,7 +965,16 @@ func main() {
 		// TODO: handle failures
 		switch cmsg.msgType {
 		case MSG_TYPE_RUN_GETFE:
-			//FIXME
+			var limit NodeId
+			if isValidNodeId(cmsg.limit) {
+				limit = cmsg.limit
+			} else {
+				limit := new(NodeId)
+				limit.Ids = append(limit.Ids, cmsg.fe.Id.Ids...)
+				limit.Ids[cmsg.hierarchy]++
+			}
+			go DoGetFE(cmsg.fe.Hostname, cmsg.hierarchy,
+					limit)
 		case MSG_TYPE_ADD_NODEID:
 			DLog("MSG_TYPE_ADD_NODEID, add fe %v", cmsg.fe)
 			addFE(cmsg.hierarchy, cmsg.fe)
@@ -844,6 +1004,11 @@ func main() {
 			go DoGetFE(fe.Hostname, cmsg.hierarchy, limit)
 			// 2. on recving the response replace old fe by sending
 			//    a ctrlMsg{MSG_TYPE_ADD_NODEID}
+
+		case MSG_TYPE_FIND_FE:
+			fe := findFE(cmsg.hierarchy, cmsg.limit)
+			cmsg.feChan <-fe
+
 		}
 	}
 	}
