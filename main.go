@@ -45,6 +45,8 @@ type Configuration struct {
 	UcsdNode string
 	Dlog int
 	LogColor int
+
+	NtwConfig string
 }
 func (c Configuration) String() string {
 	return fmt.Sprintf("{Hostname %v, MulticastFlag %v, Hierarchies %d " +
@@ -270,6 +272,10 @@ func isValidNodeId(n NodeId) bool {
 	return (len(n.Ids) == m.config.Hierarchies)
 }
 
+func isValidFE(fe FingerEntry) bool {
+	return !isEqualFE(fe, zeroFE)
+}
+
 
 func isEqualNodeId(n1, n2 NodeId) bool {
 	if !isValidNodeId(n1) || !isValidNodeId(n2) {
@@ -298,7 +304,7 @@ func ServeRPCServer (s *grpc.Server, lis net.Listener) {
 
 func DoJoin(hostname string, hierarchy int, joinChan chan JoinResp) {
 	MLog("DoJoin hostname %s", hostname)
-	conn, err := grpc.Dial(hostname, grpc.WithInsecure(), grpc.WithBlock());
+	conn, err := grpc.Dial(hostname, grpc.WithInsecure());
 	if err!= nil {
 		HLog("Dial failed: fe %v", hostname)
 		return
@@ -362,7 +368,7 @@ func DoGetFE(dest string, hierarchy int, limit NodeId) {
 	DLog("Enter DoGetFE dest %v, hierarchy %d, limit %v",
 		dest, hierarchy, limit)
 
-	conn, err := grpc.Dial(dest, grpc.WithInsecure(), grpc.WithBlock());
+	conn, err := grpc.Dial(dest, grpc.WithInsecure());
 	if err!= nil {
 		HLog("Dial failed: dest %v", dest)
 		return
@@ -438,12 +444,13 @@ func HalfId(n NodeId) NodeId {
 
 func NodeIdBetween(id, left, right NodeId, hierarchy int) bool {
 	ret := __NodeIdBetween(id, left, right, hierarchy)
-//	DLog("NodeIdBetween[%v]: left %v < id %v < right %v",
-//		ret, left, id, right)
+	DLog("NodeIdBetween[%v]: left %d < id %d < right %d",
+		ret, left.Ids[hierarchy], id.Ids[hierarchy], right.Ids[hierarchy])
 	return ret
 }
 
 func __NodeIdBetween(id, left, right NodeId, hierarchy int) bool {
+
 	// is left <= id < right ?
 	if left.Ids[hierarchy] < right.Ids[hierarchy] {
 		// -----|-------|-------|-----
@@ -650,11 +657,26 @@ func FillFingerTable(m *mcaster) {
 	}
 }
 
+//func setLimit(in NodeId, limit NodeId, hierarchy int) *NodeId {
+//	out := new(NodeId)
+//	out.Ids = make([]uint64, m.config.Hierarchies)
+//
+//	for i:= m.config.Hierarchies-1; i>hierarchy; i-- {
+//		out.Ids[i] = in.Ids[i]
+//	}
+//	for i:=hierarchy ; i>=0 ; i-- {
+//		out.Ids[i] = limit.Ids[i]
+//	}
+//	return out
+//}
+
 func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 	//call rpc to fwd it
-	MLog("Enter DoFwdPkt fe %v, hierarchy %d", fe, hierarchy)
+	MLog("Enter DoFwdPkt hostname %v, hierarchy %d", fe.Hostname, hierarchy)
+	DLog("Enter DoFwdPkt hostname %v, hierarchy %d, limit %v, pkt %v",
+		fe.Hostname, hierarchy, limit, pkt)
 
-	conn, err := grpc.Dial(fe.Hostname, grpc.WithInsecure(), grpc.WithBlock());
+	conn, err := grpc.Dial(fe.Hostname, grpc.WithInsecure());
 	if err!= nil {
 		HLog("Dial failed: fe %v", fe.Hostname)
 		return
@@ -663,8 +685,33 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 
 	new_pkt := new(FwdPacket)
 	hops := int32(len(pkt.EvalList) + 1)
+	new_pkt.Limit = fe.Id
 
-	new_pkt.Limit = &limit;
+	if pkt.Limit != nil {
+		if (isValidNodeId(*pkt.Limit) &&
+		    NodeIdBetween(*pkt.Limit, m.id, limit, hierarchy)) {
+			new_pkt.Limit.Ids[hierarchy] = pkt.Limit.Ids[hierarchy]
+			//DLog("1 %v", new_pkt.Limit)
+			//new_pkt.Limit = setLimit(*new_pkt.Limit, *pkt.Limit,
+			//			 hierarchy)
+		} else if m.id.Ids[hierarchy] == limit.Ids[hierarchy] {
+			// a case where NodeIdBetween fails. so... ??
+			//DLog("2 %v", new_pkt.Limit)
+			new_pkt.Limit.Ids[hierarchy] = pkt.Limit.Ids[hierarchy]
+			//new_pkt.Limit = setLimit(*new_pkt.Limit, *pkt.Limit,
+			//			 hierarchy)
+
+		} else {
+			new_pkt.Limit.Ids[hierarchy] = limit.Ids[hierarchy]
+			//DLog("3 %v", limit)
+			//new_pkt.Limit = setLimit(*new_pkt.Limit, limit, hierarchy)
+		}
+
+	} else {
+		new_pkt.Limit.Ids[hierarchy] = limit.Ids[hierarchy]
+		//DLog("4 %v", limit)
+		//new_pkt.Limit = setLimit(*new_pkt.Limit, limit, hierarchy)
+	}
 	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
 	new_pkt.EvalList = append(pkt.EvalList,
 				  &EvalInfo{Hops: hops,
@@ -673,7 +720,7 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 				  })
 	new_pkt.Payload = pkt.Payload
 	new_pkt.Src = &m.id
-	DLog("DoFwdPkt new_pkt: %v", new_pkt);
+	DLog("DoFwdPkt to %v new_pkt: %v", fe.Hostname, new_pkt);
 
 	c := NewMcasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(),
@@ -722,11 +769,12 @@ func __NeedToFwd(fe FingerEntry, pkt FwdPacket, hierarchy int) bool {
 		return true
 	}
 
-	for h:=0 ; h<m.config.Hierarchies; h++ {
+	for h:= m.config.Hierarchies -1; h>=0; h-- {
 		if s.Ids[h] != m.id.Ids[h] {
 			// diff h level hierarchy
 			//    - fwd at h level within limit
-			if hierarchy == h && fe.Id.Ids[h] < pkt.Limit.Ids[h] {
+			if (hierarchy == h &&
+			    (NodeIdBetween(*fe.Id, m.id, *pkt.Limit, h))) {
 				return true
 			}
 
@@ -777,7 +825,8 @@ func StartMcast() {
 		xbytes := make([]byte, m.config.XBytes)//zeros
 		pkt := new(FwdPacket)
 		pkt.Payload = append(pkt.Payload, xbytes...)
-		self := m.id
+		self := NodeId{}
+		self.Ids = append(self.Ids, m.id.Ids...)
 		pkt.Src = &self
 		pktChan <- *pkt
 		DLog("Mcast Complete")
@@ -813,6 +862,30 @@ func ValidFE(felist []FingerEntry) []FingerEntry {
 	return retlist
 }
 
+func getFwdList(hierarchy int) []FingerEntry {
+	retlist := ValidFE(m.FT[hierarchy])
+	
+	for _, fe := range(retlist) {
+		if isEqualFE(fe, m.succ[hierarchy]) {
+			return retlist
+		}
+	}
+
+	if !isEqualFE(m.succ[hierarchy], zeroFE) {
+		return append(retlist, m.succ[hierarchy])
+	}
+	return retlist
+}
+
+func printFEList(fel []FingerEntry) {
+	x := " "
+	for _, fe := range(fel) {
+		x = x + fe.Hostname + "; "
+	}
+	MLog("printFEList: %v", x)
+}
+
+
 // find largest finger entry which is within limit
 func findFE(hierarchy int, limit NodeId) FingerEntry {
 	// find the largest FT entry which is less than limit
@@ -830,6 +903,13 @@ func findFE(hierarchy int, limit NodeId) FingerEntry {
 }
 
 func addFE(hierarchy int, fe FingerEntry) {
+
+	DLog("AddFE fe.hostname %v, hierarchy %d", fe.Hostname, hierarchy)
+
+	if fe.Hostname == m.hostname {
+		return	// dont add into finger table
+	}
+
 	// find the smallest FT entry where fe can be added
 	for i:= uint32(0) ; i< FTsize; i++ {
 		var limitId NodeId //limit for FE[i]'s nodeId A/2 or A/4 ...
@@ -837,12 +917,12 @@ func addFE(hierarchy int, fe FingerEntry) {
 		limitId.Ids[hierarchy] = (limitId.Ids[hierarchy] +
 						 (uint64(1) <<i))
 
-		if !NodeIdBetween(*fe.Id, m.id, limitId, hierarchy) {
+		if !__NodeIdBetween(*fe.Id, m.id, limitId, hierarchy) {
 			continue
 		}
 
-		if (isValidNodeId(*m.FT[hierarchy][i].Id) &&
-		    NodeIdBetween(*m.FT[hierarchy][i].Id,
+		if (isValidFE(m.FT[hierarchy][i]) &&
+		    __NodeIdBetween(*m.FT[hierarchy][i].Id,
 				  *fe.Id, limitId, hierarchy)) {
 				//it is valid and closer to limit.
 				//No changes.
@@ -857,8 +937,8 @@ func addFE(hierarchy int, fe FingerEntry) {
 
 	// case where fe < self < self + 2^63
 	// check if this can be added as succ.
-	if ( !isValidNodeId(*m.succ[hierarchy].Id) ||
-	     NodeIdBetween(*fe.Id, *m.succ[hierarchy].Id, m.id, hierarchy)) {
+	if ( !isValidFE(m.succ[hierarchy]) ||
+	    __NodeIdBetween(*fe.Id, m.id, *m.succ[hierarchy].Id, hierarchy)) {
 		if !isEqualNodeId(*m.succ[hierarchy].Id, *fe.Id) {
 			m.succ[hierarchy] = fe
 			MLog("addFE added fe %v as succ[%d]", fe, hierarchy)
@@ -866,14 +946,121 @@ func addFE(hierarchy int, fe FingerEntry) {
 	}
 
 	// check if this can be added as pred.
-	if ( !isValidNodeId(*m.pred[hierarchy].Id) ||
-	     NodeIdBetween(*fe.Id, *m.pred[hierarchy].Id, m.id, hierarchy)) {
+	if ( !isValidFE(m.pred[hierarchy]) ||
+	    __NodeIdBetween(*fe.Id, *m.pred[hierarchy].Id, m.id, hierarchy)) {
 		if !isEqualNodeId(*m.pred[hierarchy].Id, *fe.Id) {
 			m.pred[hierarchy] = fe
 			MLog("addFE added fe %v as pred[%d]", fe, hierarchy)
 		}
 	}
+
 }
+
+type ntwConfig struct {
+	Ntw [][][]string
+}
+
+func fillFTfromConfig(NtwConfig string) {
+	fp, err := os.Open(NtwConfig)
+	if err != nil {
+		log.Fatalf("Config file open failed %v", err)
+	}
+	defer fp.Close()
+
+	decoder := json.NewDecoder(fp)
+	n := ntwConfig{}
+	err = decoder.Decode(&n)
+	if err != nil {
+		log.Fatalf("Config file read failed: %v", err)
+	}
+
+	MLog("NtwConfig: %v", n)
+
+	a := 0
+	b := 0
+	c := 0
+
+	zeroId := new(NodeId)
+	zeros := make([]uint64, m.config.Hierarchies)
+	zeroId.Ids = append(zeroId.Ids, zeros...)
+	zeroFE = FingerEntry{Id:zeroId, Hostname:""}
+	for h:=0; h<m.config.Hierarchies; h++ {
+		var hEntry []FingerEntry
+		m.FT = append(m.FT, hEntry)
+		for i:=0; i<FTsize; i++ {
+			m.FT[h] = append(m.FT[h], zeroFE)
+		}
+
+		m.succ = append(m.succ, zeroFE)
+		m.pred = append(m.pred, zeroFE)
+	}
+
+	DLog("Hostname: %v", m.hostname)
+	for i1, l1 := range n.Ntw {
+		for i2, l2 := range l1 {
+			for i3, node := range l2 {
+				DLog("%v", node)
+				if node == m.hostname {
+					a = i1
+					b = i2
+					c = i3
+				}
+			}
+		}
+	}
+	DLog("%d, %d, %d", a, b,c)
+
+	m.id.Ids = append(m.id.Ids, McastHash(n.Ntw[a][b][c]))
+	m.id.Ids = append(m.id.Ids, McastHash(n.Ntw[a][b][0]))
+	m.id.Ids = append(m.id.Ids, McastHash(n.Ntw[a][0][0]))
+
+
+	// at top level:
+	for i, l1 := range n.Ntw {
+		if i==a {
+			continue
+		}
+		hash1 := McastHash(l1[0][0])
+		// todo choose a random node
+		id := NodeId{Ids:[]uint64{hash1, hash1, hash1}}
+		fe := FingerEntry{Id:&id, Hostname:l1[0][0]}
+		addFE(2, fe)
+	}
+
+	hash1 := McastHash(n.Ntw[a][0][0])
+	for i, l2 := range n.Ntw[a] {
+		if i==b {
+			continue
+		}
+		// todo choose a random node
+		hash2 := McastHash(l2[0])
+		id := NodeId{Ids:[]uint64{hash2, hash2, hash1}}
+		fe := FingerEntry{Id:&id, Hostname:l2[0]}
+		addFE(1, fe)
+	}
+
+	hash2 := McastHash(n.Ntw[a][b][0])
+	for _, l3 := range n.Ntw[a][b] {
+		// todo choose a random node
+		hash3 := McastHash(l3)
+		id := NodeId{Ids:[]uint64{hash3, hash2, hash1}}
+		fe := FingerEntry{Id:&id, Hostname:l3}
+		addFE(0, fe)
+	}
+
+	for h:=0; h<m.config.Hierarchies; h++ {
+		DLog("%d", h)
+		for i, fe := range m.FT[h] {
+			if !isEqualFE(fe, zeroFE) {
+				DLog("\t %d: %v", i, fe.Hostname)
+			}
+		}
+		DLog("Succ: %v",  m.succ[h].Hostname)
+		DLog("Pred: %v",  m.pred[h].Hostname)
+	}
+
+}
+
 
 func main() {
 	fmt.Println("--- Hierarchical P2P Mcast ---")
@@ -890,54 +1077,61 @@ func main() {
 
 	m.config = ReadConfig(progArgs[0])
 
-	//create and set all FT to self
-
 	m.hostname = m.config.Hostname
-	//m.config.UcsdNode = "localhost:50000"
-	ucsdNode = m.config.UcsdNode
-	m.s = grpc.NewServer()
-
 	port := ":" + progArgs[1]
 	m.hostname = m.hostname + port
 	m.config.Hostname = m.hostname
-
-	hash := McastHash(m.hostname)
-	MLog("hostname %v: hash %v", m.hostname, hash)
-	for h:=0; h<m.config.Hierarchies; h++ {
-		m.id.Ids = append(m.id.Ids, hash)
-	}
-
-	//fill up FT with selfId
-	zeroId := new(NodeId)
-	zeros := make([]uint64,m.config.Hierarchies)
-	zeroId.Ids = append(zeroId.Ids, zeros...)
-	zeroFE = FingerEntry{Id:zeroId, Hostname:""}
-	for h:=0; h<m.config.Hierarchies; h++ {
-		var hEntry []FingerEntry
-		m.FT = append(m.FT, hEntry)
-		for i:=0; i<FTsize; i++ {
-			m.FT[h] = append(m.FT[h], zeroFE)
-		}
-	}
-
+	//m.config.UcsdNode = "localhost:50000"
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
 		log.Fatalln("failed to open tcp socket: %v", err)
 	}
+	m.s = grpc.NewServer()
 	RegisterMcasterServer(m.s, m)
 
 	HLog("Start RPC server")
 	go ServeRPCServer(m.s, lis)
 
-	go JoinCluster(m.config.Hierarchies -1, ucsdNode)
-	FillFingerTable(m)
+	if m.config.NtwConfig == "" {
+		//create and set all FT to self
+
+		ucsdNode = m.config.UcsdNode
+
+
+		hash := McastHash(m.hostname)
+		MLog("hostname %v: hash %v", m.hostname, hash)
+		for h:=0; h<m.config.Hierarchies; h++ {
+			m.id.Ids = append(m.id.Ids, hash)
+		}
+
+		//fill up FT with selfId
+		zeroId := new(NodeId)
+		zeros := make([]uint64,m.config.Hierarchies)
+		zeroId.Ids = append(zeroId.Ids, zeros...)
+		zeroFE = FingerEntry{Id:zeroId, Hostname:""}
+		for h:=0; h<m.config.Hierarchies; h++ {
+			var hEntry []FingerEntry
+			m.FT = append(m.FT, hEntry)
+			for i:=0; i<FTsize; i++ {
+				m.FT[h] = append(m.FT[h], zeroFE)
+			}
+		}
+
+
+		go JoinCluster(m.config.Hierarchies -1, ucsdNode)
+		FillFingerTable(m)
+
+
+		stabilizeRing()
+	} else {
+		// read ntw info from config file
+		fillFTfromConfig(m.config.NtwConfig)
+	}
+	initState = false
 
 	if m.config.MulticastFlag == 1 {
 		go StartMcast()
 	}
-
-	stabilizeRing()
-	initState = false
 
 	for {
 	select {
@@ -950,18 +1144,28 @@ func main() {
 		// get ValidFE in reverse. The limit is self for A/2 node,
 		// for all others its the next node in the table.
 		for h:=0; h<m.config.Hierarchies; h++ {
-			limit := m.id
-			for _, fe := range ValidFE(m.FT[h]) {
+			var limit NodeId
+			limit.Ids = append(limit.Ids, m.id.Ids...)
+			fwdList := getFwdList(h)
+			printFEList(fwdList)
+			for _, fe := range fwdList {
 				if NeedToFwd(fe, pkt, h) {
-					go DoFwdPkt(fe, limit, pkt, h)
+					var lim NodeId
+					lim.Ids = make([]uint64, 0)
+					lim.Ids = append(lim.Ids, limit.Ids...)
+					go DoFwdPkt(fe, lim, pkt, h)
 				}
 				limit = *fe.Id
+				DLog("Limit %v", limit)
 			}
 		}
 
 
 	// to handle failures
 	case cmsg := <-ctrlChan:
+		if m.config.NtwConfig != "" {
+			continue
+		}
 		// TODO: handle failures
 		switch cmsg.msgType {
 		case MSG_TYPE_RUN_GETFE:

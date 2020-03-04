@@ -33,6 +33,7 @@ message EvalInfo {
 	int32 hops = 1;		// number of hops to reach self
 	int64 time = 2;		// time when it reached self
 	NodeId node = 3;	// self's node id
+	string hostname = 4;
 }
 
 message FwdPacket {
@@ -40,6 +41,7 @@ message FwdPacket {
 	repeated EvalInfo evalList = 2;	// append self info before forwarding
 	bytes  payload = 3;		// payload e.g. video/audio frames
 	NodeId src = 4;
+	string srcHostname = 5;
 }
 
 message GetFERequest {

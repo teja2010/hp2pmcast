@@ -1,0 +1,76 @@
+{
+	"C":{  "1":{   "2":{   "3": "hostname"                   }}},
+					
+	"random tree":true,
+	"ntw":				
+	[	
+		[
+			[
+				"localhost:50111",
+				"localhost:50113",
+				"localhost:50115",
+				"localhost:50117",
+				"localhost:50119"
+			],
+			[
+				"localhost:50121",
+				"localhost:50123"
+			],
+			[
+				"localhost:50131",
+				"localhost:50133"
+			]
+		],
+		[
+			[
+				"localhost:50211",
+				"localhost:50213"
+			],
+			[
+				"localhost:50221"
+			]
+		]
+	],
+	"2ntw":				
+	[	
+		[
+			[ "localhost:50113" ],
+			[ "localhost:50121" ],
+			[ "localhost:50131", "localhost:50133" ]
+		]
+	],
+
+	"3ntw":				
+	[	
+		[ [ "localhost:50113" ] ],
+		[ [ "localhost:50213" ] ],
+		[ [ "localhost:50313" ] ],
+		[ [ "localhost:50413" ] ],
+		[ [ "localhost:50513" ] ],
+		[ [ "localhost:50613" ] ],
+		[ [ "localhost:50713" ] ]
+	],
+
+	"chord ntw":true,
+	"chordntw":
+	[	
+		[
+			[
+				"localhost:50111",
+				"localhost:50113",
+				"localhost:50115",
+				"localhost:50117",
+				"localhost:50119"
+			]
+		]
+	],
+
+
+	"Narada":
+	[	
+		["localhost:50111", "localhost:50113", "localhost:50116"],
+		["localhost:50113", "localhost:50111"],
+		["localhost:50116", "localhost:50111", "localhost:50119"],
+		["localhost:50119", "localhost:50116"]
+	]
+}

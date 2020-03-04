@@ -1,0 +1,9 @@
+{
+	"hostname":"localhost",
+	"MulticastFlag":0,
+	"XBytes":100,
+	"YSeconds":100,
+	"Dlog": 1,
+	"LogColor": 1,
+	"NtwConfig": "ntw.json"
+}
