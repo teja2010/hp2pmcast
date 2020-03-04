@@ -1,0 +1,21 @@
+syntax = "proto3";
+package main;
+
+message EvalInfo {
+	int32 hops = 1;		// number of hops to reach self
+	int64 time = 2;		// time when it reached self
+	string hostname = 3;
+}
+
+message FwdPacket {
+	string source = 1;		// source
+	repeated EvalInfo evalList = 2;	// append self info before forwarding
+	bytes  payload = 3;		// payload e.g. video/audio frames
+}
+
+message Empty {
+}
+
+service mcaster {
+	rpc Fwd(FwdPacket) returns (Empty) {}
+}
