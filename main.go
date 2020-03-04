@@ -451,8 +451,16 @@ func FillFingerTable(m *mcaster) {
 	}
 }
 
-func(s *mcaster) getsuccessor *node {
-	return fingertable[0] }
+func(s *mcaster) getSuccessor(h int) *FingerEntry {
+	switch h{
+	case 1:
+		return topFT[0]
+	case 2:
+		return midFT[0]
+	case 3:
+		return lowFT[0]
+	}
+}
 
 func (s *mcaster) searchtable(key string) (string,error){
 	Hashkey = s.Hash(key)
@@ -492,45 +500,66 @@ func (s *mcaster) fingerStart(i int, max int, h int) int {
 	return start
 }
 
-func (s *mcaster) findSuccessorForFingers(id int, h int) (*NodeId, error) {
+func (s *mcaster) findSuccessorForFingers(id int, h int) (*FingerEntry, error) {
 	pred, err := s.findPredecessorForFingers(id,h)
-	//succ, err := s.getSuccessorByRPC(pred,h)
+	succ, err := s.getSuccessorByRPC(pred,h)
 	return succ, err
 }
 
-func (s *mcaster) findPredecessorForFingers(id int, h int) (*NodeId, error) {
-	closest = findClosestPrecedingNode(id,h)
-	// if closest.Id = s.Id
-	// closestSucc, err := s.getSuccessorByRPC(closest,h)
-	// if !between(id, closest.Id, closestSucc.Id)
-	//	s.findClosestPrecedingNodeByRPC(id,h)
-	return closestSucc, err
-
+func (s *mcaster) getSuccessorByRPC(pred *mcaster, h int) (*FingerEntry, error) {
+	conn, err := grpc.Dial(pred.FingerEntry.hostname, grpc.WithInsecure(), grpc.WithBlock());
+	defer conn.Close()
+	c := NewMcasterClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(),
+					   500 * time.Millisecond) //wait for 500ms
+	defer cancel()
+	resp, err := c.getSuccessor(ctx, h)
+	return resp, err
 }
 
-func (s *mcaster) findClosestPrecedingNode(id int, h int) *NodeId {
+func (s *mcaster) findPredecessorForFingers(id int, h int) (*FingerEntry, error) {
+	closest = findClosestPrecedingNode(id,h)
+	// if closest.Id = s.Id
+	closestSucc, err := s.getSuccessorByRPC(closest,h)
+	if !between(id, closest.Id, closestSucc.Id)
+		s.findClosestPrecedingNodeByRPC(closest, id, h)
+	return closest, err
+}
+
+func (s *mcaster) findClosestPrecedingNode(id int, h int) *FingerEntry {
 	for i := FTSize - 1; i >= 0; i-- {
 		switch h {
 		case 1:
 		if s.topFT[i] != nil {
-			if between(s.topFT[i].Id, chord.Id, id) {
+			if between(s.topFT[i].nodeId.A, s.FingerEntry.nodeId.A, id) {
 				return s.topFT[i]
 			}
 		}
 		case 2:
 		if s.midFT[i] != nil {
-			if between(s.midFT[i].Id, chord.Id, id) {
+			if between(s.midFT[i].nodeId.B, s.FingerEntry.nodeId.B, id) {
 				return s.midFT[i]
 			}
 		}
 		case 1:
 		if s.lowFT[i] != nil {
-			if between(s.lowFT[i].Id, chord.Id, id) {
+			if between(s.lowFT[i].nodeId.C, s.FingerEntry.nodeId.C, id) {
 				return s.lowFT[i]
 			}
 		}
 	}
-	return s.NodeId
+	return s.FingerEntry
+}
+
+func (s *mcaster) findClosestPrecedingNodeByRPC(node *FingerEntry, id int, h int) *FingerEntry {
+	conn, err := grpc.Dial(pred.FingerEntry.hostname, grpc.WithInsecure(), grpc.WithBlock());
+	defer conn.Close()
+	c := NewMcasterClient(conn)
+	ctx, cancel := context.WithTimeout(context.Background(),
+					   500 * time.Millisecond) //wait for 500ms
+	defer cancel()
+	resp, err := c.ClosestPrecedingNode(ctx, &IDandH(ID:id, H:h)
+	return resp, err
 }
 
 func DoFwdPkt(fe FingerEntry, pkt FwdPacket, hierarchy int) {

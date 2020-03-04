@@ -657,6 +657,29 @@ func (c *mcasterClient) SetSuccessor(ctx context.Context, in *Successor, opts ..
 	return out, nil
 }
 
+func (c *mcasterClient) getSuccessor(ctx context.Context, in int, opts ...grpc.CallOption) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/main.mcaster/getSuccessor", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type IDandH struct{
+	ID int32
+	H int32
+}
+
+func (c *mcasterClient) findClosestPrecedingNode(ctx context.Context, in *IDandH, opts ...grpc.CallOption) {
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, "/main.mcaster/findClosestPrecedingNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // McasterServer is the server API for Mcaster service.
 type McasterServer interface {
 	Join(context.Context, *JoinReq) (*JoinResp, error)
