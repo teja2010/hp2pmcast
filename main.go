@@ -46,6 +46,7 @@ type Configuration struct {
 	Dlog int
 	LogColor int
 
+	ExtraDelay int
 	NtwConfig string
 }
 func (c Configuration) String() string {
@@ -187,7 +188,23 @@ func McastHash(s string) uint64 {
 	return x
 }
 
+func addNtwDelay(src NodeId) {
+	if m.config.ExtraDelay == 0 {
+		return
+	}
+	for h:= m.config.Hierarchies-1; h>=0 ;h-- {
+		if src.Ids[h] != m.id.Ids[h] {
+			t := m.config.Threshold[h] * 990000
+			t += int64(m.id.Ids[0]%30000)
+			MLog("t %d", t)
+			time.Sleep(time.Duration(t) * time.Nanosecond)
+			break
+		}
+	}
+}
+
 func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
+	MLog("Fwd in")
 	DLog("Fwd in: FwdPacket %v", in)
 	if initState {
 		return nil, errors.New("Initializing...")
@@ -197,6 +214,8 @@ func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
 	// todo log the arrival of the packet, send it out periodically
 
 	// send to pktChan, it can decide to forward the pkt to others
+	addNtwDelay(*in.Src)
+
 	pktChan<-*in
 
 	return out, nil
@@ -724,7 +743,7 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 
 	c := NewMcasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(),
-					   500 * time.Millisecond) //wait for 500ms
+					   1 * time.Second) //wait for 1s
 	defer cancel()
 	_, err = c.Fwd(ctx, new_pkt)
 	if err!= nil {

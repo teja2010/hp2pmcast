@@ -4,11 +4,12 @@
 	"Hierarchies":3,
 	"XBytes":100,
 	"YSeconds":10,
-	"Threshold":[65536, 100, 10, 1],
+	"Threshold":[1, 10, 100],
 	"Dlog": 1,
 	"LogColor": 1,
 	"UcsdNode":"localhost:50000",
 	"NtwConfig": "ntw.json",
+	"ExtraDelay": 1,
 
 	"COMMENT_UcsdNode": "something.ucsd.edu:70000",
 	"LAST_ONE": 1
