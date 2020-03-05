@@ -57,6 +57,15 @@ message Successor {
 	NodeId limit = 2;	// limit till which the receiver should fwd
 }
 
+message H {
+	int32 H = 1;
+}
+
+message IDandH {
+	uint64 ID = 1;
+	int32 H = 2;
+}
+
 message Empty {
 }
 
@@ -65,5 +74,7 @@ service mcaster {
 	rpc Fwd(FwdPacket) returns (Empty) {}
 	rpc GetFingerEntry(GetFERequest) returns (GetFEResponse) {}
 	rpc SetSuccessor(Successor) returns (Empty) {}
+	rpc getSuccessor(H) returns (FingerEntry) {}
+	rpc findClosestPrecedingNode(IDandH) returns (FingerEntry) {}
 }
 
