@@ -1,8 +1,9 @@
 {
+	"LoggerHostname":"localhost:60000",
 	"hostname":"localhost",
 	"MulticastFlag":1,
 	"XBytes":100,
-	"YSeconds":10,
+	"YSeconds":1,
 	"Dlog": 1,
 	"LogColor": 1,
 	"NtwConfig": "ntw.json"

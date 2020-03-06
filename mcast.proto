@@ -42,6 +42,7 @@ message FwdPacket {
 	bytes  payload = 3;		// payload e.g. video/audio frames
 	NodeId src = 4;
 	string srcHostname = 5;
+	int32 SeqNum = 6;
 }
 
 message GetFERequest {

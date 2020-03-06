@@ -5,11 +5,11 @@
 	"XBytes":100,
 	"YSeconds":1,
 	"Threshold":[1, 10, 100],
-	"Dlog": 0,
+	"Dlog": 1,
 	"LogColor": 1,
 	"UcsdNode" : "localhost:50000",
 	"NtwConfig": "ntw.json",
-	"ExtraDelay": 1,
+	"ExtraDelay": 0,
 
 	"COMMENT_UcsdNode": "something.ucsd.edu:70000",
 	"LAST_ONE": 1
