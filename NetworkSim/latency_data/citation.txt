@@ -1,0 +1,2 @@
+The data in 3.3.2020.csv was provided by https://www.cloudping.co/. 
+It was validated with our own data collection implemented here as well. 
