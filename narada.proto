@@ -1,21 +1,22 @@
 syntax = "proto3";
 package main;
 
-message EvalInfo {
+message NEvalInfo {
 	int32 hops = 1;		// number of hops to reach self
 	int64 time = 2;		// time when it reached self
 	string hostname = 3;
 }
 
-message FwdPacket {
-	string source = 1;		// source
-	repeated EvalInfo evalList = 2;	// append self info before forwarding
+message NFwdPacket {
+	string SrcHostname = 1;		// source
+	repeated NEvalInfo evalList = 2;	// append self info before forwarding
 	bytes  payload = 3;		// payload e.g. video/audio frames
+	int32 SeqNum = 4;
 }
 
-message Empty {
+message NEmpty {
 }
 
-service mcaster {
-	rpc Fwd(FwdPacket) returns (Empty) {}
+service naradamcast {
+	rpc NaradaFwd(NFwdPacket) returns (NEmpty) {}
 }

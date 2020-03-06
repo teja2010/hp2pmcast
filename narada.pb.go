@@ -24,7 +24,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion3 // please upgrade the proto package
 
-type EvalInfo struct {
+type NEvalInfo struct {
 	Hops                 int32    `protobuf:"varint,1,opt,name=hops,proto3" json:"hops,omitempty"`
 	Time                 int64    `protobuf:"varint,2,opt,name=time,proto3" json:"time,omitempty"`
 	Hostname             string   `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
@@ -33,162 +33,172 @@ type EvalInfo struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *EvalInfo) Reset()         { *m = EvalInfo{} }
-func (m *EvalInfo) String() string { return proto.CompactTextString(m) }
-func (*EvalInfo) ProtoMessage()    {}
-func (*EvalInfo) Descriptor() ([]byte, []int) {
+func (m *NEvalInfo) Reset()         { *m = NEvalInfo{} }
+func (m *NEvalInfo) String() string { return proto.CompactTextString(m) }
+func (*NEvalInfo) ProtoMessage()    {}
+func (*NEvalInfo) Descriptor() ([]byte, []int) {
 	return fileDescriptor_92500cdcd24be61e, []int{0}
 }
 
-func (m *EvalInfo) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_EvalInfo.Unmarshal(m, b)
+func (m *NEvalInfo) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_NEvalInfo.Unmarshal(m, b)
 }
-func (m *EvalInfo) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_EvalInfo.Marshal(b, m, deterministic)
+func (m *NEvalInfo) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_NEvalInfo.Marshal(b, m, deterministic)
 }
-func (m *EvalInfo) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_EvalInfo.Merge(m, src)
+func (m *NEvalInfo) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NEvalInfo.Merge(m, src)
 }
-func (m *EvalInfo) XXX_Size() int {
-	return xxx_messageInfo_EvalInfo.Size(m)
+func (m *NEvalInfo) XXX_Size() int {
+	return xxx_messageInfo_NEvalInfo.Size(m)
 }
-func (m *EvalInfo) XXX_DiscardUnknown() {
-	xxx_messageInfo_EvalInfo.DiscardUnknown(m)
+func (m *NEvalInfo) XXX_DiscardUnknown() {
+	xxx_messageInfo_NEvalInfo.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_EvalInfo proto.InternalMessageInfo
+var xxx_messageInfo_NEvalInfo proto.InternalMessageInfo
 
-func (m *EvalInfo) GetHops() int32 {
+func (m *NEvalInfo) GetHops() int32 {
 	if m != nil {
 		return m.Hops
 	}
 	return 0
 }
 
-func (m *EvalInfo) GetTime() int64 {
+func (m *NEvalInfo) GetTime() int64 {
 	if m != nil {
 		return m.Time
 	}
 	return 0
 }
 
-func (m *EvalInfo) GetHostname() string {
+func (m *NEvalInfo) GetHostname() string {
 	if m != nil {
 		return m.Hostname
 	}
 	return ""
 }
 
-type FwdPacket struct {
-	Source               string      `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
-	EvalList             []*EvalInfo `protobuf:"bytes,2,rep,name=evalList,proto3" json:"evalList,omitempty"`
-	Payload              []byte      `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
-	XXX_unrecognized     []byte      `json:"-"`
-	XXX_sizecache        int32       `json:"-"`
+type NFwdPacket struct {
+	SrcHostname          string       `protobuf:"bytes,1,opt,name=SrcHostname,json=srcHostname,proto3" json:"SrcHostname,omitempty"`
+	EvalList             []*NEvalInfo `protobuf:"bytes,2,rep,name=evalList,proto3" json:"evalList,omitempty"`
+	Payload              []byte       `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
+	SeqNum               int32        `protobuf:"varint,4,opt,name=SeqNum,json=seqNum,proto3" json:"SeqNum,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
+	XXX_unrecognized     []byte       `json:"-"`
+	XXX_sizecache        int32        `json:"-"`
 }
 
-func (m *FwdPacket) Reset()         { *m = FwdPacket{} }
-func (m *FwdPacket) String() string { return proto.CompactTextString(m) }
-func (*FwdPacket) ProtoMessage()    {}
-func (*FwdPacket) Descriptor() ([]byte, []int) {
+func (m *NFwdPacket) Reset()         { *m = NFwdPacket{} }
+func (m *NFwdPacket) String() string { return proto.CompactTextString(m) }
+func (*NFwdPacket) ProtoMessage()    {}
+func (*NFwdPacket) Descriptor() ([]byte, []int) {
 	return fileDescriptor_92500cdcd24be61e, []int{1}
 }
 
-func (m *FwdPacket) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_FwdPacket.Unmarshal(m, b)
+func (m *NFwdPacket) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_NFwdPacket.Unmarshal(m, b)
 }
-func (m *FwdPacket) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_FwdPacket.Marshal(b, m, deterministic)
+func (m *NFwdPacket) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_NFwdPacket.Marshal(b, m, deterministic)
 }
-func (m *FwdPacket) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_FwdPacket.Merge(m, src)
+func (m *NFwdPacket) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NFwdPacket.Merge(m, src)
 }
-func (m *FwdPacket) XXX_Size() int {
-	return xxx_messageInfo_FwdPacket.Size(m)
+func (m *NFwdPacket) XXX_Size() int {
+	return xxx_messageInfo_NFwdPacket.Size(m)
 }
-func (m *FwdPacket) XXX_DiscardUnknown() {
-	xxx_messageInfo_FwdPacket.DiscardUnknown(m)
+func (m *NFwdPacket) XXX_DiscardUnknown() {
+	xxx_messageInfo_NFwdPacket.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_FwdPacket proto.InternalMessageInfo
+var xxx_messageInfo_NFwdPacket proto.InternalMessageInfo
 
-func (m *FwdPacket) GetSource() string {
+func (m *NFwdPacket) GetSrcHostname() string {
 	if m != nil {
-		return m.Source
+		return m.SrcHostname
 	}
 	return ""
 }
 
-func (m *FwdPacket) GetEvalList() []*EvalInfo {
+func (m *NFwdPacket) GetEvalList() []*NEvalInfo {
 	if m != nil {
 		return m.EvalList
 	}
 	return nil
 }
 
-func (m *FwdPacket) GetPayload() []byte {
+func (m *NFwdPacket) GetPayload() []byte {
 	if m != nil {
 		return m.Payload
 	}
 	return nil
 }
 
-type Empty struct {
+func (m *NFwdPacket) GetSeqNum() int32 {
+	if m != nil {
+		return m.SeqNum
+	}
+	return 0
+}
+
+type NEmpty struct {
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *Empty) Reset()         { *m = Empty{} }
-func (m *Empty) String() string { return proto.CompactTextString(m) }
-func (*Empty) ProtoMessage()    {}
-func (*Empty) Descriptor() ([]byte, []int) {
+func (m *NEmpty) Reset()         { *m = NEmpty{} }
+func (m *NEmpty) String() string { return proto.CompactTextString(m) }
+func (*NEmpty) ProtoMessage()    {}
+func (*NEmpty) Descriptor() ([]byte, []int) {
 	return fileDescriptor_92500cdcd24be61e, []int{2}
 }
 
-func (m *Empty) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_Empty.Unmarshal(m, b)
+func (m *NEmpty) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_NEmpty.Unmarshal(m, b)
 }
-func (m *Empty) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_Empty.Marshal(b, m, deterministic)
+func (m *NEmpty) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_NEmpty.Marshal(b, m, deterministic)
 }
-func (m *Empty) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_Empty.Merge(m, src)
+func (m *NEmpty) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_NEmpty.Merge(m, src)
 }
-func (m *Empty) XXX_Size() int {
-	return xxx_messageInfo_Empty.Size(m)
+func (m *NEmpty) XXX_Size() int {
+	return xxx_messageInfo_NEmpty.Size(m)
 }
-func (m *Empty) XXX_DiscardUnknown() {
-	xxx_messageInfo_Empty.DiscardUnknown(m)
+func (m *NEmpty) XXX_DiscardUnknown() {
+	xxx_messageInfo_NEmpty.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_Empty proto.InternalMessageInfo
+var xxx_messageInfo_NEmpty proto.InternalMessageInfo
 
 func init() {
-	proto.RegisterType((*EvalInfo)(nil), "main.EvalInfo")
-	proto.RegisterType((*FwdPacket)(nil), "main.FwdPacket")
-	proto.RegisterType((*Empty)(nil), "main.Empty")
+	proto.RegisterType((*NEvalInfo)(nil), "main.NEvalInfo")
+	proto.RegisterType((*NFwdPacket)(nil), "main.NFwdPacket")
+	proto.RegisterType((*NEmpty)(nil), "main.NEmpty")
 }
 
 func init() { proto.RegisterFile("narada.proto", fileDescriptor_92500cdcd24be61e) }
 
 var fileDescriptor_92500cdcd24be61e = []byte{
-	// 224 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x3c, 0x90, 0xdf, 0x4a, 0xc3, 0x30,
-	0x14, 0xc6, 0xed, 0xba, 0xad, 0xed, 0xd9, 0x50, 0x38, 0x17, 0x12, 0x76, 0x55, 0x0a, 0x42, 0xf1,
-	0xa2, 0xc8, 0x7c, 0x86, 0x0d, 0x04, 0x11, 0xc9, 0x1b, 0x1c, 0x9b, 0xc8, 0x82, 0xcd, 0x1f, 0x92,
-	0xb8, 0xb1, 0xb7, 0x97, 0xc6, 0xb5, 0x77, 0xdf, 0x97, 0x1c, 0x7e, 0xe7, 0xc7, 0x81, 0xad, 0x21,
-	0x4f, 0x82, 0x3a, 0xe7, 0x6d, 0xb4, 0xb8, 0xd4, 0xa4, 0x4c, 0xf3, 0x01, 0xe5, 0xe1, 0x4c, 0xc3,
-	0x9b, 0xf9, 0xb6, 0x88, 0xb0, 0x3c, 0x59, 0x17, 0x58, 0x56, 0x67, 0xed, 0x8a, 0xa7, 0x3c, 0xbe,
-	0x45, 0xa5, 0x25, 0x5b, 0xd4, 0x59, 0x9b, 0xf3, 0x94, 0x71, 0x07, 0xe5, 0xc9, 0x86, 0x68, 0x48,
-	0x4b, 0x96, 0xd7, 0x59, 0x5b, 0xf1, 0xb9, 0x37, 0x0a, 0xaa, 0xe3, 0x45, 0x7c, 0x52, 0xff, 0x23,
-	0x23, 0x3e, 0xc2, 0x3a, 0xd8, 0x5f, 0xdf, 0xcb, 0x84, 0xac, 0xf8, 0xad, 0xe1, 0x33, 0x94, 0xf2,
-	0x4c, 0xc3, 0xbb, 0x0a, 0x91, 0x2d, 0xea, 0xbc, 0xdd, 0xec, 0xef, 0xbb, 0xd1, 0xa6, 0x9b, 0x54,
-	0xf8, 0xfc, 0x8f, 0x0c, 0x0a, 0x47, 0xd7, 0xc1, 0x92, 0x48, 0xbb, 0xb6, 0x7c, 0xaa, 0x4d, 0x01,
-	0xab, 0x83, 0x76, 0xf1, 0xba, 0x7f, 0x81, 0x42, 0xf7, 0x14, 0xa2, 0xf4, 0xf8, 0x04, 0xf9, 0xf1,
-	0x22, 0xf0, 0xe1, 0x1f, 0x37, 0x9b, 0xec, 0x36, 0x37, 0xfe, 0x38, 0xdf, 0xdc, 0x7d, 0xad, 0xd3,
-	0x09, 0x5e, 0xff, 0x02, 0x00, 0x00, 0xff, 0xff, 0x2f, 0xcc, 0xb0, 0x1d, 0x12, 0x01, 0x00, 0x00,
+	// 248 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x44, 0x90, 0x41, 0x4f, 0xb3, 0x40,
+	0x10, 0x86, 0xbf, 0x2d, 0x7c, 0x08, 0x03, 0x89, 0x66, 0x0e, 0x66, 0xd3, 0x13, 0xe1, 0x44, 0x62,
+	0xe4, 0x50, 0xaf, 0x5e, 0xdb, 0x68, 0x62, 0x56, 0xb3, 0xfd, 0x05, 0x23, 0xac, 0x29, 0x91, 0x65,
+	0x91, 0x5d, 0xdb, 0xf4, 0x47, 0xf8, 0x9f, 0x0d, 0xab, 0xe0, 0x6d, 0x9e, 0xc9, 0x3b, 0x99, 0x27,
+	0x2f, 0x64, 0x3d, 0x8d, 0xd4, 0x50, 0x35, 0x8c, 0xc6, 0x19, 0x0c, 0x35, 0xb5, 0x7d, 0xf1, 0x0c,
+	0x89, 0xd8, 0x1e, 0xa9, 0x7b, 0xec, 0xdf, 0x0c, 0x22, 0x84, 0x07, 0x33, 0x58, 0xce, 0x72, 0x56,
+	0xfe, 0x97, 0x7e, 0x9e, 0x76, 0xae, 0xd5, 0x8a, 0xaf, 0x72, 0x56, 0x06, 0xd2, 0xcf, 0xb8, 0x86,
+	0xf8, 0x60, 0xac, 0xeb, 0x49, 0x2b, 0x1e, 0xe4, 0xac, 0x4c, 0xe4, 0xc2, 0xc5, 0x17, 0x03, 0x10,
+	0xbb, 0x53, 0xf3, 0x42, 0xf5, 0xbb, 0x72, 0x98, 0x43, 0xba, 0x1f, 0xeb, 0x87, 0x39, 0xcd, 0x7c,
+	0x3a, 0xb5, 0x7f, 0x2b, 0xbc, 0x81, 0x58, 0x1d, 0xa9, 0x7b, 0x6a, 0xad, 0xe3, 0xab, 0x3c, 0x28,
+	0xd3, 0xcd, 0x65, 0x35, 0xa9, 0x55, 0x8b, 0x97, 0x5c, 0x02, 0xc8, 0xe1, 0x62, 0xa0, 0x73, 0x67,
+	0xa8, 0xf1, 0x8f, 0x33, 0x39, 0x23, 0x5e, 0x43, 0xb4, 0x57, 0x1f, 0xe2, 0x53, 0xf3, 0xd0, 0xdb,
+	0x47, 0xd6, 0x53, 0x11, 0x43, 0x24, 0xb6, 0x7a, 0x70, 0xe7, 0xcd, 0x3d, 0xa4, 0x3f, 0x05, 0xe8,
+	0x9a, 0xac, 0xc3, 0x5b, 0x48, 0x84, 0xc7, 0xdd, 0xa9, 0xc1, 0xab, 0xdf, 0x97, 0x8b, 0xf8, 0x3a,
+	0x9b, 0x25, 0xa6, 0xdb, 0xe2, 0xdf, 0x6b, 0xe4, 0x5b, 0xbb, 0xfb, 0x0e, 0x00, 0x00, 0xff, 0xff,
+	0xaa, 0xf3, 0xf1, 0x96, 0x45, 0x01, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -199,72 +209,72 @@ var _ grpc.ClientConnInterface
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion6
 
-// McasterClient is the client API for Mcaster service.
+// NaradamcastClient is the client API for Naradamcast service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
-type McasterClient interface {
-	Fwd(ctx context.Context, in *FwdPacket, opts ...grpc.CallOption) (*Empty, error)
+type NaradamcastClient interface {
+	NaradaFwd(ctx context.Context, in *NFwdPacket, opts ...grpc.CallOption) (*NEmpty, error)
 }
 
-type mcasterClient struct {
+type naradamcastClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewMcasterClient(cc grpc.ClientConnInterface) McasterClient {
-	return &mcasterClient{cc}
+func NewNaradamcastClient(cc grpc.ClientConnInterface) NaradamcastClient {
+	return &naradamcastClient{cc}
 }
 
-func (c *mcasterClient) Fwd(ctx context.Context, in *FwdPacket, opts ...grpc.CallOption) (*Empty, error) {
-	out := new(Empty)
-	err := c.cc.Invoke(ctx, "/main.mcaster/Fwd", in, out, opts...)
+func (c *naradamcastClient) NaradaFwd(ctx context.Context, in *NFwdPacket, opts ...grpc.CallOption) (*NEmpty, error) {
+	out := new(NEmpty)
+	err := c.cc.Invoke(ctx, "/main.naradamcast/NaradaFwd", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// McasterServer is the server API for Mcaster service.
-type McasterServer interface {
-	Fwd(context.Context, *FwdPacket) (*Empty, error)
+// NaradamcastServer is the server API for Naradamcast service.
+type NaradamcastServer interface {
+	NaradaFwd(context.Context, *NFwdPacket) (*NEmpty, error)
 }
 
-// UnimplementedMcasterServer can be embedded to have forward compatible implementations.
-type UnimplementedMcasterServer struct {
+// UnimplementedNaradamcastServer can be embedded to have forward compatible implementations.
+type UnimplementedNaradamcastServer struct {
 }
 
-func (*UnimplementedMcasterServer) Fwd(ctx context.Context, req *FwdPacket) (*Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Fwd not implemented")
+func (*UnimplementedNaradamcastServer) NaradaFwd(ctx context.Context, req *NFwdPacket) (*NEmpty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method NaradaFwd not implemented")
 }
 
-func RegisterMcasterServer(s *grpc.Server, srv McasterServer) {
-	s.RegisterService(&_Mcaster_serviceDesc, srv)
+func RegisterNaradamcastServer(s *grpc.Server, srv NaradamcastServer) {
+	s.RegisterService(&_Naradamcast_serviceDesc, srv)
 }
 
-func _Mcaster_Fwd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FwdPacket)
+func _Naradamcast_NaradaFwd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NFwdPacket)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(McasterServer).Fwd(ctx, in)
+		return srv.(NaradamcastServer).NaradaFwd(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/main.mcaster/Fwd",
+		FullMethod: "/main.naradamcast/NaradaFwd",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(McasterServer).Fwd(ctx, req.(*FwdPacket))
+		return srv.(NaradamcastServer).NaradaFwd(ctx, req.(*NFwdPacket))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-var _Mcaster_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "main.mcaster",
-	HandlerType: (*McasterServer)(nil),
+var _Naradamcast_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "main.naradamcast",
+	HandlerType: (*NaradamcastServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "Fwd",
-			Handler:    _Mcaster_Fwd_Handler,
+			MethodName: "NaradaFwd",
+			Handler:    _Naradamcast_NaradaFwd_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

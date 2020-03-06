@@ -2,7 +2,7 @@
 	"C":{  "1":{   "2":{   "3": "hostname"                   }}},
 					
 	"random tree":true,
-	"ntw":				
+	"bigntw":				
 	[	
 		[
 			[
@@ -52,7 +52,7 @@
 	],
 
 	"chord ntw":true,
-	"chordntw":
+	"ntw":
 	[	
 		[
 			[

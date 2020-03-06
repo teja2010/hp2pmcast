@@ -29,6 +29,7 @@ var (
 	m *mcaster
 	pktChan = make(chan FwdPacket, 100)
 	ctrlChan = make(chan ctrlMsg, 10)
+	logChan = make(chan FwdPacket, 100)
 	zeroFE FingerEntry
 	initState = true // true till we complete filling fingertables.
 			 // dont answer any RPC requests
@@ -188,6 +189,57 @@ func McastHash(s string) uint64 {
 	return x
 }
 
+func sendToLogger() {
+
+	type logconfig struct {
+		LoggerHostname string
+	}
+
+	fp, err := os.Open("logger.json")
+	if err != nil {
+		log.Fatalf("Config file open failed %v", err)
+	}
+	decoder := json.NewDecoder(fp)
+	lc := logconfig{}
+	err = decoder.Decode(&lc)
+	if err != nil {
+		log.Fatalf("Config file read failed: %v", err)
+	}
+	defer fp.Close()
+
+	conn, err := grpc.Dial(lc.LoggerHostname, grpc.WithInsecure());
+	if err!= nil {
+		HLog("Dial failed: logger %v", lc.LoggerHostname)
+	}
+
+	for {
+	select {
+		case pkt := <-logChan:
+
+		new_pkt := new(FwdPacket)
+		new_pkt.Src = &m.id
+		new_pkt.SrcHostname = m.hostname
+		new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
+		new_pkt.SeqNum = pkt.SeqNum
+		c := NewMcasterClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(),
+						   1 * time.Second) //wait for 1s
+		defer cancel()
+		_, err = c.Fwd(ctx, new_pkt)
+		if err!= nil {
+			HLog("Fwd to %v failed: %v", lc.LoggerHostname, err)
+			//send a message to ctrlChan, about the failure
+
+			conn.Close()
+			conn, err = grpc.Dial(lc.LoggerHostname, grpc.WithInsecure());
+			if err!= nil {
+				HLog("Dial failed: logger %v", lc.LoggerHostname)
+			}
+		}
+	}}
+
+}
+
 func addNtwDelay(src NodeId) {
 	if m.config.ExtraDelay == 0 {
 		return
@@ -196,7 +248,6 @@ func addNtwDelay(src NodeId) {
 		if src.Ids[h] != m.id.Ids[h] {
 			t := m.config.Threshold[h] * 990000
 			t += int64(m.id.Ids[0]%30000)
-			MLog("t %d", t)
 			time.Sleep(time.Duration(t) * time.Nanosecond)
 			break
 		}
@@ -211,12 +262,20 @@ func (s *mcaster) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
 	}
 	out := new(Empty)
 
-	// todo log the arrival of the packet, send it out periodically
 
 	// send to pktChan, it can decide to forward the pkt to others
 	addNtwDelay(*in.Src)
+	hops := int32(len(in.EvalList) + 1)
+	in.EvalList = append(in.EvalList,
+				&EvalInfo{Hops: hops,
+					    Time: Time64(),
+					    Node: &m.id,
+					    Hostname: m.hostname,
+				})
 
 	pktChan<-*in
+	logChan<-*in
+	// todo log the arrival of the packet, send it out periodically
 
 	return out, nil
 }
@@ -703,8 +762,9 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 	defer conn.Close()
 
 	new_pkt := new(FwdPacket)
-	hops := int32(len(pkt.EvalList) + 1)
 	new_pkt.Limit = fe.Id
+	new_pkt.SeqNum = pkt.SeqNum
+	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
 
 	if pkt.Limit != nil {
 		if (isValidNodeId(*pkt.Limit) &&
@@ -731,14 +791,9 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 		//DLog("4 %v", limit)
 		//new_pkt.Limit = setLimit(*new_pkt.Limit, limit, hierarchy)
 	}
-	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
-	new_pkt.EvalList = append(pkt.EvalList,
-				  &EvalInfo{Hops: hops,
-					    Time: Time64(),
-					    Node: &m.id,
-				  })
 	new_pkt.Payload = pkt.Payload
 	new_pkt.Src = &m.id
+	new_pkt.SrcHostname = m.hostname
 	DLog("DoFwdPkt to %v new_pkt: %v", fe.Hostname, new_pkt);
 
 	c := NewMcasterClient(conn)
@@ -831,6 +886,7 @@ func ReadConfig(file string) Configuration {
 }
 
 func StartMcast() {
+	seqNum := 0
 	for {
 		// sleep for Y seconds
 		time.Sleep(time.Duration(m.config.YSeconds) * time.Second)
@@ -844,10 +900,20 @@ func StartMcast() {
 		xbytes := make([]byte, m.config.XBytes)//zeros
 		pkt := new(FwdPacket)
 		pkt.Payload = append(pkt.Payload, xbytes...)
+		hops := 1
+		pkt.EvalList = append(pkt.EvalList,
+					&EvalInfo{Hops: int32(hops),
+						    Time: Time64(),
+						    Node: &m.id,
+						    Hostname: m.hostname,
+					})
 		self := NodeId{}
 		self.Ids = append(self.Ids, m.id.Ids...)
 		pkt.Src = &self
+		pkt.SeqNum = int32(seqNum)
+		seqNum = seqNum + 1
 		pktChan <- *pkt
+		logChan <- *pkt
 		DLog("Mcast Complete")
 
 	}
@@ -1146,6 +1212,7 @@ func main() {
 		// read ntw info from config file
 		fillFTfromConfig(m.config.NtwConfig)
 	}
+	go sendToLogger()
 	initState = false
 
 	if m.config.MulticastFlag == 1 {
@@ -1168,13 +1235,19 @@ func main() {
 			fwdList := getFwdList(h)
 			printFEList(fwdList)
 			for _, fe := range fwdList {
-				if NeedToFwd(fe, pkt, h) {
+				var fe2 FingerEntry
+				fe2.Id = new(NodeId)
+				fe2.Id.Ids = append(fe2.Id.Ids, fe.Id.Ids...)
+				fe2.Hostname = fe.Hostname
+
+				if NeedToFwd(fe2, pkt, h) {
 					var lim NodeId
 					lim.Ids = make([]uint64, 0)
 					lim.Ids = append(lim.Ids, limit.Ids...)
-					go DoFwdPkt(fe, lim, pkt, h)
+					go DoFwdPkt(fe2, lim, pkt, h)
 				}
-				limit = *fe.Id
+				limit.Ids = limit.Ids[:0]
+				limit.Ids = append(limit.Ids, fe2.Id.Ids...)
 				DLog("Limit %v", limit)
 			}
 		}

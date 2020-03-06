@@ -18,7 +18,8 @@ import (
 
 var (
 	n *narada
-	pktChan chan FwdPacket
+	pktChan chan NFwdPacket
+	logChan chan NFwdPacket
 	initState = true
 )
 
@@ -131,7 +132,7 @@ type Configuration struct {
 }
 
 type narada struct {
-	UnimplementedMcasterServer
+	UnimplementedNaradamcastServer
 	s *grpc.Server
 
 	hostname string
@@ -140,6 +141,7 @@ type narada struct {
 }
 
 func StartMcast() {
+	seqNum := 0
 	for {
 		// sleep for Y seconds
 		time.Sleep(time.Duration(n.config.YSeconds) * time.Second)
@@ -147,31 +149,97 @@ func StartMcast() {
 		DLog("Mcast start")
 		//send out X bytes
 		xbytes := make([]byte, n.config.XBytes)//zeros
-		pkt := new(FwdPacket)
+		pkt := new(NFwdPacket)
 		pkt.Payload = append(pkt.Payload, xbytes...)
-		pkt.Source = n.hostname
+		pkt.SrcHostname = n.hostname
+		hops := int32(len(pkt.EvalList) + 1)
+		pkt.EvalList = append(pkt.EvalList,
+					  &NEvalInfo{Hops: hops,
+						    Time: Time64(),
+						    Hostname: n.hostname,
+					  })
+		pkt.SeqNum = int32(seqNum)
+		seqNum = seqNum + 1
 		pktChan<- *pkt
+		logChan<-*pkt
 		DLog("Mcast Complete")
 
 	}
 }
 
-func (s *narada) Fwd(ctx context.Context, in *FwdPacket) (*Empty, error) {
-	DLog("Fwd in: FwdPacket %v", in)
+func sendToLogger() {
+	type logconfig struct {
+		NLoggerHostname string
+	}
+
+	fp, err := os.Open("logger.json")
+	if err != nil {
+		log.Fatalf("Config file open failed %v", err)
+	}
+	decoder := json.NewDecoder(fp)
+	lc := logconfig{}
+	err = decoder.Decode(&lc)
+	if err != nil {
+		log.Fatalf("Config file read failed: %v", err)
+	}
+	defer fp.Close()
+
+	conn, err := grpc.Dial(lc.NLoggerHostname, grpc.WithInsecure());
+	if err!= nil {
+		HLog("Dial failed: logger %v", lc.NLoggerHostname)
+	}
+
+	for {
+	select {
+	case pkt := <-logChan:
+
+		MLog("received pkt %v", pkt)
+
+		new_pkt := new(NFwdPacket)
+		new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
+		new_pkt.SeqNum = pkt.SeqNum
+		new_pkt.SrcHostname = n.hostname
+		c := NewNaradamcastClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(),
+						   1 * time.Second) //wait for 1s
+		defer cancel()
+		_, err = c.NaradaFwd(ctx, new_pkt)
+		if err!= nil {
+			HLog("Fwd to %v failed: %v", lc.NLoggerHostname, err)
+			//send a message to ctrlChan, about the failure
+			conn.Close()
+			conn, err = grpc.Dial(lc.NLoggerHostname, grpc.WithInsecure());
+			if err!= nil {
+				HLog("Dial failed: logger %v", lc.NLoggerHostname)
+			}
+		}
+	}}
+
+}
+
+func (s *narada) NaradaFwd(ctx context.Context, in *NFwdPacket) (*NEmpty, error) {
+	DLog("Fwd in: NFwdPacket %v", in)
 	if initState {
 		return nil, errors.New("Initializing...")
 	}
-	out := new(Empty)
+	out := new(NEmpty)
 
 	// todo log the arrival of the packet, send it out periodically
+	hops := int32(len(in.EvalList) + 1)
+	in.EvalList = append(in.EvalList,
+				  &NEvalInfo{Hops: hops,
+					    Time: Time64(),
+					    Hostname: n.hostname,
+				  })
 
 	// send to pktChan, it can decide to forward the pkt to others
 	pktChan<-*in
+	logChan<-*in
 
 	return out, nil
 }
 
-func DoFwdPkt(hostname string, pkt FwdPacket) {
+func DoFwdPkt(hostname string, pkt NFwdPacket) {
 	//call rpc to fwd it
 	MLog("Enter DoFwdPkt hostname %v", hostname)
 
@@ -182,24 +250,25 @@ func DoFwdPkt(hostname string, pkt FwdPacket) {
 	}
 	defer conn.Close()
 
-	new_pkt := new(FwdPacket)
+	new_pkt := new(NFwdPacket)
 	hops := int32(len(pkt.EvalList) + 1)
 
-	new_pkt.Source = n.hostname;
+	new_pkt.SrcHostname = n.hostname;
+	new_pkt.SeqNum = pkt.SeqNum
 	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
 	new_pkt.EvalList = append(pkt.EvalList,
-				  &EvalInfo{Hops: hops,
+				  &NEvalInfo{Hops: hops,
 					    Time: Time64(),
 					    Hostname: n.hostname,
 				  })
 	new_pkt.Payload = pkt.Payload
 	DLog("DoFwdPkt new_pkt: %v", new_pkt);
 
-	c := NewMcasterClient(conn)
+	c := NewNaradamcastClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(),
 					   500 * time.Millisecond) //wait for 500ms
 	defer cancel()
-	_, err = c.Fwd(ctx, new_pkt)
+	_, err = c.NaradaFwd(ctx, new_pkt)
 	if err!= nil {
 		HLog("Fwd to %v failed: %v", hostname, err)
 		return
@@ -241,8 +310,10 @@ func main() {
 		log.Fatalln("failed to open tcp socket: %v", err)
 	}
 	n.s = grpc.NewServer()
-	RegisterMcasterServer(n.s, n)
-	pktChan = make(chan FwdPacket, 100)
+	RegisterNaradamcastServer(n.s, n)
+	pktChan = make(chan NFwdPacket, 100)
+	logChan = make(chan NFwdPacket, 100)
+	go sendToLogger()
 
 	HLog("Start RPC server")
 	go ServeRPCServer(n.s, lis)
@@ -259,11 +330,11 @@ func main() {
 	select {
 
 	case pkt := <-pktChan:
-		MLog("received pkt Src %v", pkt.Source)
+		MLog("received pkt Src %v", pkt.SrcHostname)
 		DLog("received pkt %v", pkt)
 
 		for _, ll := range n.links {
-			if ll != pkt.Source {
+			if ll != pkt.SrcHostname {
 				go DoFwdPkt(ll, pkt)
 			}
 		}

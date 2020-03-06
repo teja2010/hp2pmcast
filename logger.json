@@ -1,0 +1,4 @@
+{
+	"LoggerHostname":"localhost:50000",
+	"NLoggerHostname":"localhost:60000"
+}
