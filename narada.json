@@ -2,9 +2,9 @@
 	"LoggerHostname":"localhost:60000",
 	"hostname":"localhost",
 	"MulticastFlag":1,
-	"XBytes":100,
-	"YSeconds":1,
-	"Dlog": 1,
+	"XBytes":400,
+	"YMSeconds":10,
+	"Dlog": 0,
 	"LogColor": 1,
 	"NtwConfig": "ntw.json"
 }

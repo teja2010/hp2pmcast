@@ -27,9 +27,9 @@ const (
 var (
 	ucsdNode = "" // known ucsd lab machine
 	m *mcaster
-	pktChan = make(chan FwdPacket, 100)
-	ctrlChan = make(chan ctrlMsg, 10)
-	logChan = make(chan FwdPacket, 100)
+	pktChan = make(chan FwdPacket, 1000)
+	ctrlChan = make(chan ctrlMsg, 1000)
+	logChan = make(chan FwdPacket, 1000)
 	zeroFE FingerEntry
 	initState = true // true till we complete filling fingertables.
 			 // dont answer any RPC requests
@@ -40,7 +40,7 @@ type Configuration struct {
 	MulticastFlag int
 	Hierarchies int
 	XBytes int
-	YSeconds int
+	YMSeconds int
 	//Add new items here. read from config.json
 	Threshold []int64
 	UcsdNode string
@@ -54,7 +54,7 @@ func (c Configuration) String() string {
 	return fmt.Sprintf("{Hostname %v, MulticastFlag %v, Hierarchies %d " +
 			   "XBytes %v, YSeconds %v, Threshold %v, UcsdNode %v}",
 			   c.Hostname, c.MulticastFlag, c.Hierarchies,
-			   c.XBytes, c.YSeconds,
+			   c.XBytes, c.YMSeconds,
 			   c.Threshold, c.UcsdNode)
 }
 func GetHostName(hostname string) string {
@@ -223,7 +223,7 @@ func sendToLogger() {
 		new_pkt.SeqNum = pkt.SeqNum
 		c := NewMcasterClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(),
-						   1 * time.Second) //wait for 1s
+						   10 * time.Second) //wait for 2s
 		defer cancel()
 		_, err = c.Fwd(ctx, new_pkt)
 		if err!= nil {
@@ -798,7 +798,7 @@ func DoFwdPkt(fe FingerEntry, limit NodeId, pkt FwdPacket, hierarchy int) {
 
 	c := NewMcasterClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(),
-					   1 * time.Second) //wait for 1s
+					   5 * time.Second) //wait for 1s
 	defer cancel()
 	_, err = c.Fwd(ctx, new_pkt)
 	if err!= nil {
@@ -889,7 +889,7 @@ func StartMcast() {
 	seqNum := 0
 	for {
 		// sleep for Y seconds
-		time.Sleep(time.Duration(m.config.YSeconds) * time.Second)
+		time.Sleep(time.Duration(m.config.YMSeconds) * time.Millisecond)
 
 		if initState {
 			continue
@@ -1162,10 +1162,12 @@ func main() {
 
 	m.config = ReadConfig(progArgs[0])
 
-	m.hostname = m.config.Hostname
+	hostname_config := ReadConfig("hostname.json")
+	m.hostname = hostname_config.Hostname
 	port := ":" + progArgs[1]
 	m.hostname = m.hostname + port
 	m.config.Hostname = m.hostname
+
 	//m.config.UcsdNode = "localhost:50000"
 	lis, err := net.Listen("tcp", port)
 	if err != nil {
