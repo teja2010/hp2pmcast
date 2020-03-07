@@ -23,7 +23,7 @@ type logStr struct {
 
 var (
 	asd = ""
-	logChan = make(chan logStr, 100)
+	logChan = make(chan logStr, 1000)
 )
 
 func fileLog(seq int32, hostname string, evList []*EvalInfo) {

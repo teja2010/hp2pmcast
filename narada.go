@@ -126,7 +126,7 @@ type Configuration struct {
 	MulticastFlag int
 
 	XBytes int
-	YSeconds int
+	YMSeconds int
 	Dlog int
 	LogColor int
 }
@@ -144,7 +144,7 @@ func StartMcast() {
 	seqNum := 0
 	for {
 		// sleep for Y seconds
-		time.Sleep(time.Duration(n.config.YSeconds) * time.Second)
+		time.Sleep(time.Duration(n.config.YMSeconds) * time.Millisecond)
 
 		DLog("Mcast start")
 		//send out X bytes
@@ -193,7 +193,7 @@ func sendToLogger() {
 	select {
 	case pkt := <-logChan:
 
-		MLog("received pkt %v", pkt)
+		DLog("received pkt %v", pkt)
 
 		new_pkt := new(NFwdPacket)
 		new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
@@ -201,7 +201,7 @@ func sendToLogger() {
 		new_pkt.SrcHostname = n.hostname
 		c := NewNaradamcastClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(),
-						   1 * time.Second) //wait for 1s
+						   10 * time.Second) //wait for 1s
 		defer cancel()
 		_, err = c.NaradaFwd(ctx, new_pkt)
 		if err!= nil {
@@ -251,22 +251,17 @@ func DoFwdPkt(hostname string, pkt NFwdPacket) {
 	defer conn.Close()
 
 	new_pkt := new(NFwdPacket)
-	hops := int32(len(pkt.EvalList) + 1)
+	//hops := int32(len(pkt.EvalList) + 1)
 
 	new_pkt.SrcHostname = n.hostname;
 	new_pkt.SeqNum = pkt.SeqNum
 	new_pkt.EvalList = append(new_pkt.EvalList, pkt.EvalList...)
-	new_pkt.EvalList = append(pkt.EvalList,
-				  &NEvalInfo{Hops: hops,
-					    Time: Time64(),
-					    Hostname: n.hostname,
-				  })
 	new_pkt.Payload = pkt.Payload
 	DLog("DoFwdPkt new_pkt: %v", new_pkt);
 
 	c := NewNaradamcastClient(conn)
 	ctx, cancel := context.WithTimeout(context.Background(),
-					   500 * time.Millisecond) //wait for 500ms
+					   5 * time.Second) //wait for 500ms
 	defer cancel()
 	_, err = c.NaradaFwd(ctx, new_pkt)
 	if err!= nil {
@@ -298,8 +293,9 @@ func main() {
 	progArgs = progArgs[1:]
 
 	n.config = ReadConfig(progArgs[0])
+	hostname_config := ReadConfig("hostname.json")
 
-	n.hostname = n.config.Hostname
+	n.hostname = hostname_config.Hostname
 	port := ":" + progArgs[1]
 	n.hostname = n.hostname + port
 	n.config.Hostname = n.hostname
@@ -311,8 +307,8 @@ func main() {
 	}
 	n.s = grpc.NewServer()
 	RegisterNaradamcastServer(n.s, n)
-	pktChan = make(chan NFwdPacket, 100)
-	logChan = make(chan NFwdPacket, 100)
+	pktChan = make(chan NFwdPacket, 1000)
+	logChan = make(chan NFwdPacket, 1000)
 	go sendToLogger()
 
 	HLog("Start RPC server")
@@ -331,7 +327,7 @@ func main() {
 
 	case pkt := <-pktChan:
 		MLog("received pkt Src %v", pkt.SrcHostname)
-		DLog("received pkt %v", pkt)
+		//DLog("received pkt %v", pkt)
 
 		for _, ll := range n.links {
 			if ll != pkt.SrcHostname {
