@@ -3,7 +3,7 @@
 	"hostname":"localhost",
 	"MulticastFlag":1,
 	"XBytes":400,
-	"YMSeconds":10,
+	"YMSeconds":100000,
 	"Dlog": 0,
 	"LogColor": 1,
 	"NtwConfig": "ntw.json"
